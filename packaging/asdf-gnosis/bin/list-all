@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# List release tags for gnosis (strip leading v)
+curl -fsSL "https://api.github.com/repos/SinAnima/gnosis/releases" \
+  | sed -n 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/p' \
+  | sort -V \
+  | xargs

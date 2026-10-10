@@ -1,0 +1,8 @@
+{
+  "completion_tokens": 77,
+  "model": "gemini-3.5-flash-lite",
+  "prompt_tokens": 59,
+  "text": "{\n  \"status\": \"partial\",\n  \"entities\": [\n    {\n      \"name\": \"ping\",\n      \"type\": \"function\",\n      \"confidence\": \"low\",\n      \"summary\": \"The ping function returns the string pong.\",\n      \"relationships\": [],\n      \"diagnostics\": []\n    }\n  ]\n}",
+  "total_tokens": 136,
+  "vendor": "gemini"
+}

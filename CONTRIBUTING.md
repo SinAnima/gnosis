@@ -10,13 +10,12 @@ Requirements:
 - Optional: `git` on `PATH` for repository enrichment during scans
 
 ```bash
-git clone https://github.com/thanos/gnosis.git
+git clone https://github.com/SinAnima/gnosis.git
 cd gnosis
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --all -- --check
-cargo deny check
+./scripts/ci.sh
 ```
+
+`scripts/ci.sh` is the local copy of CI: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, `cargo audit` when it is installed, and a release build that runs `gnosis about`.
 
 Headless demo against the fixture:
 

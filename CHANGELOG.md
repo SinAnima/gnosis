@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LLM vendor adapters** — chat goes through an OpenAI, Anthropic, Gemini, or Ollama adapter selected from the model id (`openai::`, `anthropic::`, `gemini::`, `ollama::` force one). Recorded replies in `fixtures/llm/recorded/` replay in tests so CI does not call a model. The parser accepts `type` as an alias of `kind`.
+- **Install channels** — Homebrew, Scoop, mise, asdf, `scripts/install.sh`, and a setup Action, scaffolded with [sastri](https://crates.io/crates/sastri). Existing CI and release workflows stay in-repo.
+- **`scripts/ci.sh`** — local run of the CI checks (fmt, Clippy, tests, coverage, deny, audit, release binary).
+
+## [0.2.0] - 2026-10-10
+
+### Added
+
+- **Assisted understanding** (`--features llm`) — optional multi-provider semantic extraction via [`genai`](https://crates.io/crates/genai) and prompt packs (code, code review, docs, data, image analysis, OCR, generic). CLI: `scan --llm [MODEL] --llm-mode fallback|always`. Fallback claims images, PDFs, and unknown binaries; always claims Partial on every object. Deterministic Full providers still win. Every LLM claim is stamped `origin=llm`, `model`, `prompt_kind`, `prompt_version`, and `review=pending`. `gnosis review list|accept` edits that mark in an OKF bundle; the TUI command is `:review`. Replies are cached under `.gnosis/llm-cache` by content fingerprint, model, and prompt version. `--llm-max-requests` and `--llm-max-tokens` stop further calls without aborting the scan (`0` is unlimited). Content that looks like a private key, AWS access key, or API token is not sent unless `--llm-allow-secrets`. The TUI shows request, error, cache-hit, and token counters (Ollama often reports 0 tokens).
+- **Failed analysis stays in the knowledge store** — an analyze error upserts the object as `failed` (with a secret-scrubbed reason) before the job is retried, so OKF includes it.
 - **Persistent async job queue** — every discovered artifact is enqueued as an `analyze_object` job. Persistence is abstracted by `JobStore` (default: **redb** at `.gnosis/jobs.redb`). Jobs store function kind, JSON args, and result/error. CLI: `--job-db`.
 - **Job inspection** — `gnosis jobs list [--status …]` and `gnosis jobs show <id>`; TUI `:jobs [status]` (list) and `:job <id>` (detail). Shortcut `J`.
 - **Auto-retry with progressive backoff** — failed jobs are requeued automatically with exponential backoff (`available_at` gates claiming) and only marked `failed` once attempts are exhausted. Tunable via `--max-attempts`, `--retry-base-ms`, `--retry-max-ms` on `scan` and `jobs rerun`.
@@ -57,5 +67,6 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/thanos/gnosis/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/thanos/gnosis/releases/tag/v0.1.0
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/SinAnima/gnosis/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/SinAnima/gnosis/releases/tag/v0.1.0

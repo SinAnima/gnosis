@@ -1,0 +1,8 @@
+{
+  "completion_tokens": 86,
+  "model": "tinyllama:latest",
+  "prompt_tokens": 94,
+  "text": "{\n    \"entities\": [\n        {\n            \"type\": \"system\",\n            \"name\": \"system\",\n            \"confidence\": 0.9,\n            \"summary\": \"Pong\",\n            \"relationships\": [],\n            \"diagnostics\": []\n        }\n    ],\n    \"status\": \"partial\",\n    \"markdown\": false\n}",
+  "total_tokens": 180,
+  "vendor": "ollama"
+}

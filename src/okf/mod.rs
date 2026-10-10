@@ -207,8 +207,23 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
             "# {}\n\n\
              - From: `{}`\n\
              - To: `{}`\n\
-             - Kind: `{}`\n",
-            rel.kind, rel.from, rel.to, rel.kind
+             - Kind: `{}`\n\
+             {}\n",
+            rel.kind,
+            rel.from,
+            rel.to,
+            rel.kind,
+            if rel.attributes.is_empty() {
+                String::new()
+            } else {
+                let attrs = rel
+                    .attributes
+                    .iter()
+                    .map(|(k, v)| format!("- `{k}`: {v}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("\n## Attributes\n\n{attrs}\n")
+            }
         );
         let filename = sanitize(&format!("{}.md", rel.id.as_str()));
         let provider = rel.evidence.first().map(|e| e.provider.to_string());

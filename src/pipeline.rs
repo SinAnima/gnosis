@@ -194,6 +194,16 @@ impl Pipeline {
         providers: ProviderRegistry,
         job_store: Arc<dyn JobStore>,
     ) -> Self {
+        Self::with_job_store_and_metrics(config, providers, job_store, Arc::new(ScanMetrics::new()))
+    }
+
+    /// Build a pipeline with shared [`ScanMetrics`] (so LLM counters match the TUI).
+    pub fn with_job_store_and_metrics(
+        config: ScanConfig,
+        providers: ProviderRegistry,
+        job_store: Arc<dyn JobStore>,
+        metrics: Arc<ScanMetrics>,
+    ) -> Self {
         let mut store = KnowledgeStore::new();
         store.set_root(config.root.clone());
         store.set_connector(config.connector_name().to_string());
@@ -208,7 +218,7 @@ impl Pipeline {
             config,
             providers,
             store: Arc::new(Mutex::new(store)),
-            metrics: Arc::new(ScanMetrics::new()),
+            metrics,
             cancel: Arc::new(AtomicBool::new(false)),
             job_store,
         }
@@ -628,9 +638,37 @@ fn process_object(
     });
 
     let mut reader = BytesContentReader::new(bytes);
-    let result = provider.analyze(object, &proto, &mut reader)?;
+    let result = match provider.analyze(object, &proto, &mut reader) {
+        Ok(result) => result,
+        Err(err) => {
+            let message = crate::scrub::scrub_secrets(&err.to_string());
+            let prior = store.lock().unwrap().object_status(&object.id);
+            if prior != Some(UnderstandingStatus::Failed) {
+                if let Some(prev) = prior {
+                    metrics.unrecord_status(prev);
+                }
+                metrics.record_status(UnderstandingStatus::Failed);
+            }
+            store.lock().unwrap().upsert_object(StoredObject {
+                descriptor: object.clone(),
+                proto,
+                status: UnderstandingStatus::Failed,
+                provider: Some(provider.id()),
+                classification_reason: Some(message.clone()),
+                entity_ids: Vec::new(),
+                diagnostics: vec![message.clone()],
+            });
+            let _ = events.send(PipelineEvent::ObjectClassified {
+                id: object.id.clone(),
+                status: UnderstandingStatus::Failed,
+                reason: Some(message.clone()),
+            });
+            return Err(GnosisError::provider(provider.id().as_str(), message));
+        }
+    };
 
     let mut entity_ids = Vec::new();
+    let prior = store.lock().unwrap().object_status(&object.id);
     {
         let mut st = store.lock().unwrap();
         for entity in &result.record.entities {
@@ -670,6 +708,11 @@ fn process_object(
     }
 
     metrics.record_status(result.status);
+    if let Some(prev) = prior {
+        if prev != result.status {
+            metrics.unrecord_status(prev);
+        }
+    }
     let _ = events.send(PipelineEvent::AnalysisCompleted {
         id: object.id.clone(),
         provider: provider.id(),
