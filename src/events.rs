@@ -82,6 +82,14 @@ pub struct MetricsSnapshot {
     pub relationships: u64,
     pub queue_depth: usize,
     pub elapsed_ms: u64,
+    pub llm_requests: u64,
+    pub llm_errors: u64,
+    pub llm_cache_hits: u64,
+    pub llm_prompt_tokens: u64,
+    pub llm_completion_tokens: u64,
+    pub llm_total_tokens: u64,
+    pub llm_max_requests: u64,
+    pub llm_max_tokens: u64,
 }
 
 impl PipelineEvent {
@@ -135,10 +143,26 @@ impl PipelineEvent {
             },
             Self::ExportStarted { path } => format!("export started: {}", path.display()),
             Self::ExportCompleted { path } => format!("export completed: {}", path.display()),
-            Self::MetricsSnapshot { metrics } => format!(
-                "metrics: {} objs, {} understood, {} unknown",
-                metrics.objects_discovered, metrics.understood, metrics.unknown
-            ),
+            Self::MetricsSnapshot { metrics } => {
+                if metrics.llm_requests > 0 || metrics.llm_errors > 0 {
+                    format!(
+                        "metrics: {} objs, {} understood, {} unknown; llm {} req ({} err), {} tok (p{}/c{})",
+                        metrics.objects_discovered,
+                        metrics.understood,
+                        metrics.unknown,
+                        metrics.llm_requests,
+                        metrics.llm_errors,
+                        metrics.llm_total_tokens,
+                        metrics.llm_prompt_tokens,
+                        metrics.llm_completion_tokens
+                    )
+                } else {
+                    format!(
+                        "metrics: {} objs, {} understood, {} unknown",
+                        metrics.objects_discovered, metrics.understood, metrics.unknown
+                    )
+                }
+            }
         }
     }
 }

@@ -1,0 +1,51 @@
+# Install-channel wrappers for the gnosis executable.
+# Secrets are never stored here. Do not generate ci or github_releases:
+# those workflows already exist (coverage, cargo deny, multi-arch release + crates.io).
+
+[project]
+name = "gnosis"
+description = "Gnosis — enterprise knowledge compiler (CLI + library)"
+github_owner = "SinAnima"
+github_repo = "gnosis"
+binary_name = "gnosis"
+version = "0.2.0"
+cargo_manifest = "Cargo.toml"
+license = "MIT"
+homepage = "https://github.com/SinAnima/gnosis"
+
+[org]
+homebrew_tap = "SinAnima/homebrew-tap"
+scoop_bucket = "SinAnima/scoop-bucket"
+asdf_plugin_repo = "SinAnima/asdf-gnosis"
+
+[mechanisms]
+ci = false
+github_releases = false
+install_sh = true
+homebrew = true
+scoop = true
+asdf = true
+mise = true
+setup_action = true
+npm = false
+pypi = false
+hex = false
+ruby_gem = false
+haskell_cabal = false
+
+[release]
+platforms = [
+  "linux-x86_64",
+  "linux-aarch64",
+  "macos-aarch64",
+  "macos-x86_64",
+  "windows-x86_64",
+]
+publish_crates_io = true
+publish_sha256sums = true
+
+[paths]
+packaging_dir = "packaging"
+scripts_dir = "scripts"
+workflows_dir = ".github/workflows"
+actions_dir = ".github/actions"

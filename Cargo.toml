@@ -1,11 +1,11 @@
 [package]
 name = "gnosis"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 authors = ["Thanos Vassilakis"]
-repository = "https://github.com/thanos/gnosis"
-homepage = "https://github.com/thanos/gnosis"
+repository = "https://github.com/SinAnima/gnosis"
+homepage = "https://github.com/SinAnima/gnosis"
 documentation = "https://docs.rs/gnosis"
 rust-version = "1.85"
 description = "Gnosis — enterprise knowledge compiler (CLI + library)"
@@ -28,12 +28,14 @@ aws-config = { version = "1", features = ["behavior-version-latest"] }
 # Omit aws-sdk-s3's default `rustls` feature — it enables legacy rustls 0.21
 # (RUSTSEC-2026-0098/0099/0104). Modern TLS comes from `default-https-client`.
 aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+base64 = { version = "0.23.0", optional = true }
 blake3 = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
 crossterm = "0.29"
 csv = "1"
+genai = { version = "0.5.3", optional = true }
 ignore = "0.4"
 mime_guess = "2"
 pulldown-cmark = { version = "0.13", default-features = false }
@@ -56,3 +58,8 @@ assert_cmd = "2"
 crossbeam-channel = "0.5"
 predicates = "3"
 tempfile = "3"
+
+[features]
+default = []
+# Optional multi-provider LLM semantic extraction (`genai` + prompt packs).
+llm = ["dep:genai", "dep:base64"]

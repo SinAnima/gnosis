@@ -1,0 +1,8 @@
+{
+  "completion_tokens": 85,
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_tokens": 67,
+  "text": "```json\n{\n  \"status\": \"partial\",\n  \"entities\": [\n    {\n      \"name\": \"ping\",\n      \"type\": \"function\",\n      \"confidence\": \"low\",\n      \"summary\": \"Function ping returns the string pong\",\n      \"relationships\": [],\n      \"diagnostics\": []\n    }\n  ]\n}\n```",
+  "total_tokens": 152,
+  "vendor": "anthropic"
+}

@@ -14,14 +14,17 @@ pub mod jobs;
 pub mod knowledge;
 pub mod okf;
 pub mod pipeline;
+pub mod prompts;
 pub mod provider;
 pub mod providers;
 pub mod query;
+pub mod review;
+pub mod scrub;
 pub mod status;
 pub mod store;
 pub mod tui;
 
-pub use config::{ScanConfig, ScanMetrics, ScanSource};
+pub use config::{LlmConfig, LlmMetrics, LlmMode, ScanConfig, ScanMetrics, ScanSource};
 pub use connectors::{
     is_s3_uri, parse_s3_uri, FilesystemConnector, GitContext, GitProtoData, MemoryS3Backend,
     ObjectDescriptor, ProtoData, S3Backend, S3Connector, S3Location,
@@ -45,10 +48,17 @@ pub use knowledge::{
 };
 pub use okf::OkfExporter;
 pub use pipeline::{Pipeline, PipelineHandle};
+pub use prompts::{select_prompt_kind, PromptKind, PromptPack, RESPONSE_SCHEMA};
 pub use provider::{ProviderRegistry, Support, UnderstandingProvider};
 pub use providers::{
-    default_registry, CppProvider, CsvProvider, ElixirProvider, GenericMetadataProvider,
-    JsonProvider, MarkdownProvider, PlainTextProvider, RustProvider, TomlProvider, YamlProvider,
+    build_registry, default_registry, CppProvider, CsvProvider, ElixirProvider,
+    GenericMetadataProvider, JsonProvider, MarkdownProvider, PlainTextProvider, RustProvider,
+    TomlProvider, YamlProvider,
+};
+#[cfg(feature = "llm")]
+pub use providers::{
+    parse_llm_json, strip_json_fence, AnthropicAdapter, GeminiAdapter, LlmCompletion,
+    LlmSemanticProvider, LlmStamp, LlmVendor, OllamaAdapter, OpenAiAdapter, StaticBackend,
 };
 pub use query::{ExplainResult, QueryEngine};
 pub use status::UnderstandingStatus;

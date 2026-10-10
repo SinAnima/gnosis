@@ -93,6 +93,79 @@ impl KnowledgeStore {
         &self.enabled_providers
     }
 
+    pub fn object_status(&self, id: &ObjectId) -> Option<UnderstandingStatus> {
+        self.objects.get(id).map(|o| o.status)
+    }
+
+    pub fn review_rows(&self) -> Vec<crate::review::ReviewRow> {
+        let mut rows = Vec::new();
+        for entity in self.entities.values() {
+            if entity.attributes.get("origin").map(String::as_str) != Some("llm") {
+                continue;
+            }
+            rows.push(crate::review::ReviewRow {
+                id: entity.id.to_string(),
+                kind: entity.kind.clone(),
+                label: entity.name.clone(),
+                review: entity
+                    .attributes
+                    .get("review")
+                    .cloned()
+                    .unwrap_or_else(|| "pending".into()),
+            });
+        }
+        for rel in self.relationships.values() {
+            if rel.attributes.get("origin").map(String::as_str) != Some("llm") {
+                continue;
+            }
+            rows.push(crate::review::ReviewRow {
+                id: rel.id.as_str().to_string(),
+                kind: rel.kind.clone(),
+                label: format!("{} -> {}", rel.from, rel.to),
+                review: rel
+                    .attributes
+                    .get("review")
+                    .cloned()
+                    .unwrap_or_else(|| "pending".into()),
+            });
+        }
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        rows
+    }
+
+    pub fn accept_review(&mut self, query: &str) -> std::result::Result<String, String> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Err("review id required".into());
+        }
+        let mut matches: Vec<String> = self
+            .review_rows()
+            .into_iter()
+            .map(|r| r.id)
+            .filter(|id| id == q || id.ends_with(q) || id.contains(q))
+            .collect();
+        matches.sort();
+        matches.dedup();
+        let id = match matches.len() {
+            0 => return Err(format!("review target not found: {q}")),
+            1 => matches.remove(0),
+            n => return Err(format!("ambiguous review id '{q}' ({n} matches)")),
+        };
+        if let Some(entity) = self.entities.values_mut().find(|e| e.id.as_str() == id) {
+            entity.attributes.insert("review".into(), "accepted".into());
+            return Ok(id);
+        }
+        if let Some(rel) = self
+            .relationships
+            .values_mut()
+            .find(|r| r.id.as_str() == id)
+        {
+            rel.attributes.insert("review".into(), "accepted".into());
+            return Ok(id);
+        }
+        Err(format!("review target not found: {q}"))
+    }
+
     pub fn upsert_object(&mut self, object: StoredObject) {
         let path_key = object
             .descriptor

@@ -1,11 +1,11 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use gnosis::{
-    default_registry, drain_events_headless, format_job_detail, format_job_list_filtered,
-    is_s3_uri, parse_age, parse_job_id_list, parse_s3_uri, pause_jobs, pause_scan, prepare_rerun,
+    build_registry, drain_events_headless, format_job_detail, format_job_list_filtered, is_s3_uri,
+    parse_age, parse_job_id_list, parse_s3_uri, pause_jobs, pause_scan, prepare_rerun,
     prepare_rerun_scan, resolve_scan_id, stop_jobs, stop_scan, unpause_jobs, unpause_scan,
-    Exporter, JobId, JobListFilter, JobStatus, JobStore, OkfExporter, Pipeline, QueryEngine,
-    RedbJobStore, RetryPolicy, ScanConfig, ScanSource, TuiApp,
+    Exporter, JobId, JobListFilter, JobStatus, JobStore, LlmConfig, OkfExporter, Pipeline,
+    QueryEngine, RedbJobStore, RetryPolicy, ScanConfig, ScanSource, TuiApp,
 };
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -16,6 +16,7 @@ use std::time::Duration;
 #[derive(Parser, Debug)]
 #[command(
     name = "gnosis",
+    version,
     about = "Gnosis — enterprise knowledge compiler",
     long_about = "Compile a local repository or S3 bucket into structured, traceable knowledge (OKF)."
 )]
@@ -63,6 +64,31 @@ enum Commands {
         /// Maximum retry backoff in milliseconds
         #[arg(long, default_value_t = 30_000)]
         retry_max_ms: u64,
+        /// Enable LLM semantic extraction (requires build with `--features llm`).
+        /// Optional model name; default `gpt-4o-mini`. Provider is inferred by genai
+        /// (OpenAI / Anthropic / Gemini / Ollama / …) from the model id + env API key.
+        #[arg(long, num_args = 0..=1, default_missing_value = "gpt-4o-mini")]
+        llm: Option<String>,
+        /// When to use the LLM: `fallback` (images/OCR/unknown) or `always` (Partial on all)
+        #[arg(long, default_value = "fallback")]
+        llm_mode: String,
+        /// Stop LLM calls after this many requests (`0` = unlimited)
+        #[arg(long, default_value_t = 0)]
+        llm_max_requests: u64,
+        /// Stop LLM calls after this many total tokens (`0` = unlimited)
+        #[arg(long, default_value_t = 0)]
+        llm_max_tokens: u64,
+        /// Send objects even when they look like they contain secrets
+        #[arg(long)]
+        llm_allow_secrets: bool,
+        /// Directory for cached LLM replies
+        #[arg(long, default_value = ".gnosis/llm-cache")]
+        llm_cache_dir: PathBuf,
+    },
+    /// List or accept pending LLM review marks in an OKF bundle
+    Review {
+        #[command(subcommand)]
+        command: ReviewCommands,
     },
     /// Inspect persisted jobs (list / detail)
     Jobs {
@@ -185,6 +211,23 @@ enum JobsCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum ReviewCommands {
+    /// List LLM claims whose review mark is pending
+    List {
+        /// OKF bundle directory
+        #[arg(long, default_value = "knowledge.okf")]
+        okf: PathBuf,
+    },
+    /// Mark one LLM claim accepted (id or unique prefix)
+    Accept {
+        id: String,
+        /// OKF bundle directory
+        #[arg(long, default_value = "knowledge.okf")]
+        okf: PathBuf,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -205,6 +248,12 @@ fn main() -> Result<()> {
             max_attempts,
             retry_base_ms,
             retry_max_ms,
+            llm,
+            llm_mode,
+            llm_max_requests,
+            llm_max_tokens,
+            llm_allow_secrets,
+            llm_cache_dir,
         } => run_scan(
             path,
             no_tui,
@@ -216,8 +265,30 @@ fn main() -> Result<()> {
             region,
             job_db,
             RetryPolicy::new(max_attempts, retry_base_ms, retry_max_ms),
+            llm,
+            llm_mode,
+            llm_max_requests,
+            llm_max_tokens,
+            llm_allow_secrets,
+            llm_cache_dir,
         ),
+        Commands::Review { command } => run_review(command),
         Commands::Jobs { command } => run_jobs(command),
+    }
+}
+
+fn run_review(command: ReviewCommands) -> Result<()> {
+    match command {
+        ReviewCommands::List { okf } => {
+            let rows = gnosis::review::list_okf(&okf).map_err(|e| anyhow::anyhow!(e))?;
+            println!("{}", gnosis::review::format_reviews(&rows));
+            Ok(())
+        }
+        ReviewCommands::Accept { id, okf } => {
+            let accepted = gnosis::review::accept_okf(&okf, &id).map_err(|e| anyhow::anyhow!(e))?;
+            println!("accepted {accepted}");
+            Ok(())
+        }
     }
 }
 
@@ -519,6 +590,12 @@ fn run_scan(
     region: Option<String>,
     job_db: PathBuf,
     retry: RetryPolicy,
+    llm: Option<String>,
+    llm_mode: String,
+    llm_max_requests: u64,
+    llm_max_tokens: u64,
+    llm_allow_secrets: bool,
+    llm_cache_dir: PathBuf,
 ) -> Result<()> {
     let mut config = if is_s3_uri(&path) {
         let location = parse_s3_uri(&path).map_err(|e| anyhow::anyhow!(e))?;
@@ -540,9 +617,23 @@ fn run_scan(
     config.output_path = output.clone();
     config.job_db_path = job_db;
     config.retry = retry;
+    config.llm = resolve_llm_config(
+        llm,
+        &llm_mode,
+        llm_max_requests,
+        llm_max_tokens,
+        llm_allow_secrets,
+        llm_cache_dir,
+    )?;
 
-    let providers = default_registry();
-    let pipeline = Pipeline::new(config.clone(), providers).context("create pipeline")?;
+    let metrics = Arc::new(gnosis::ScanMetrics::new());
+    let providers = build_registry(config.llm.as_ref(), Some(Arc::clone(&metrics.llm)));
+    let job_store: Arc<dyn gnosis::JobStore> = Arc::new(
+        RedbJobStore::open(&config.job_db_path)
+            .with_context(|| format!("open job db {}", config.job_db_path.display()))?,
+    );
+    let pipeline =
+        Pipeline::with_job_store_and_metrics(config.clone(), providers, job_store, metrics);
     let mut handle = pipeline.spawn();
     let events = handle.take_events();
 
@@ -620,12 +711,53 @@ fn run_scan(
     Ok(())
 }
 
+fn resolve_llm_config(
+    llm: Option<String>,
+    llm_mode: &str,
+    max_requests: u64,
+    max_tokens: u64,
+    allow_secrets: bool,
+    cache_dir: PathBuf,
+) -> Result<Option<LlmConfig>> {
+    let Some(model) = llm else {
+        return Ok(None);
+    };
+    #[cfg(not(feature = "llm"))]
+    {
+        let _ = (
+            model,
+            llm_mode,
+            max_requests,
+            max_tokens,
+            allow_secrets,
+            cache_dir,
+        );
+        bail!(
+            "LLM support is not enabled in this build; reinstall with `cargo install gnosis --features llm` (or `cargo build --features llm`)"
+        );
+    }
+    #[cfg(feature = "llm")]
+    {
+        let mode = gnosis::LlmMode::parse(llm_mode).map_err(|e| anyhow::anyhow!(e))?;
+        let mut cfg = LlmConfig::new(model, mode);
+        cfg.max_requests = max_requests;
+        cfg.max_tokens = max_tokens;
+        cfg.allow_secrets = allow_secrets;
+        cfg.cache_dir = cache_dir;
+        Ok(Some(cfg))
+    }
+}
+
 const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
 
   gnosis scan <path>                 Live TUI scan (local directory)
   gnosis scan s3://bucket[/prefix]   Scan an S3 bucket (keys = paths)
   gnosis scan <target> --no-tui      Headless scan (prints summary)
   gnosis scan <target> --no-tui --export
+  gnosis scan <target> --llm [MODEL] [--llm-mode fallback|always]
+  gnosis scan <target> --llm --llm-max-requests N --llm-max-tokens N
+  gnosis review list [--okf knowledge.okf]
+  gnosis review accept <id> [--okf knowledge.okf]
 
   Each scan creates a scan id (`scan:…`); every job is linked to it.
 
@@ -643,9 +775,14 @@ const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
 
 Artifacts are processed as durable jobs (default store: .gnosis/jobs.redb).
 S3 uses the default AWS credential chain; pass --region to override.
+LLM extraction requires a build with `--features llm`. It is off unless you pass `--llm`.
+The model id selects an adapter: OpenAI (`gpt-…`), Anthropic (`claude-…`), Gemini (`gemini-…`), or Ollama (anything else, including `tinyllama:latest`). Prefix `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
+Full deterministic providers still win. LLM claims stay `review=pending` until accepted.
+Secrets are not sent unless `--llm-allow-secrets`. Token totals depend on the provider (Ollama often reports 0).
 
 TUI commands (press :):
   summary | objects | unknown | providers | stats
+  review | review accept <id>
   jobs [status] | job <id>
   find <text> | explain <name> | graph <name>
   export okf [path] | help | quit

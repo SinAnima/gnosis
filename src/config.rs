@@ -37,6 +37,68 @@ impl ScanSource {
     }
 }
 
+/// When to invoke the optional LLM semantic provider.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmMode {
+    /// Claim objects that would otherwise only get the generic Weak fallback
+    /// (images, PDFs/OCR, unknown binaries). Deterministic Full providers still win.
+    #[default]
+    Fallback,
+    /// Claim Partial support for every object. Deterministic Full providers still win;
+    /// LLM beats PlainText Partial / Generic when registered ahead of them.
+    Always,
+}
+
+impl LlmMode {
+    pub fn parse(s: &str) -> std::result::Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fallback" => Ok(Self::Fallback),
+            "always" => Ok(Self::Always),
+            other => Err(format!(
+                "invalid llm mode '{other}' (expected fallback|always)"
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fallback => "fallback",
+            Self::Always => "always",
+        }
+    }
+}
+
+/// Optional multi-provider LLM configuration (`--features llm`).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LlmConfig {
+    /// Model id. A `vendor::model` prefix forces the adapter; otherwise the name
+    /// selects OpenAI (`gpt-…`), Anthropic (`claude-…`), Gemini (`gemini-…`), or Ollama.
+    pub model: String,
+    pub mode: LlmMode,
+    /// Directory of JSON cache files keyed by content, model, and prompt version.
+    pub cache_dir: PathBuf,
+    /// Stop calling the model after this many requests. `0` means unlimited.
+    pub max_requests: u64,
+    /// Stop calling the model after this many total tokens. `0` means unlimited.
+    pub max_tokens: u64,
+    /// When false, objects that look like they contain secrets are not sent.
+    pub allow_secrets: bool,
+}
+
+impl LlmConfig {
+    pub fn new(model: impl Into<String>, mode: LlmMode) -> Self {
+        Self {
+            model: model.into(),
+            mode,
+            cache_dir: PathBuf::from(".gnosis/llm-cache"),
+            max_requests: 0,
+            max_tokens: 0,
+            allow_secrets: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScanConfig {
     pub source: ScanSource,
@@ -55,6 +117,8 @@ pub struct ScanConfig {
     pub job_poll_ms: u64,
     /// Auto-retry policy for failed analyze jobs.
     pub retry: crate::jobs::RetryPolicy,
+    /// When set (and built with `--features llm`), register the LLM semantic provider.
+    pub llm: Option<LlmConfig>,
 }
 
 impl Default for ScanConfig {
@@ -82,6 +146,7 @@ impl Default for ScanConfig {
             job_db_path: PathBuf::from(".gnosis/jobs.redb"),
             job_poll_ms: 25,
             retry: crate::jobs::RetryPolicy::default(),
+            llm: None,
         }
     }
 }
@@ -110,6 +175,85 @@ impl ScanConfig {
     }
 }
 
+/// Live counters for optional LLM semantic extraction (shared with the provider).
+#[derive(Debug, Default)]
+pub struct LlmMetrics {
+    pub requests: AtomicU64,
+    pub errors: AtomicU64,
+    pub cache_hits: AtomicU64,
+    pub prompt_tokens: AtomicU64,
+    pub completion_tokens: AtomicU64,
+    pub total_tokens: AtomicU64,
+    /// Configured cap copied for the TUI. `0` means unlimited.
+    pub max_requests: AtomicU64,
+    /// Configured cap copied for the TUI. `0` means unlimited.
+    pub max_tokens: AtomicU64,
+}
+
+impl LlmMetrics {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record one successful chat completion (token fields may be missing from some providers).
+    pub fn record_success(
+        &self,
+        prompt_tokens: Option<i32>,
+        completion_tokens: Option<i32>,
+        total_tokens: Option<i32>,
+    ) {
+        self.requests.fetch_add(1, Ordering::Relaxed);
+        let prompt = prompt_tokens.unwrap_or(0).max(0) as u64;
+        let completion = completion_tokens.unwrap_or(0).max(0) as u64;
+        let total = total_tokens
+            .map(|t| t.max(0) as u64)
+            .unwrap_or(prompt + completion);
+        self.prompt_tokens.fetch_add(prompt, Ordering::Relaxed);
+        self.completion_tokens
+            .fetch_add(completion, Ordering::Relaxed);
+        self.total_tokens.fetch_add(total, Ordering::Relaxed);
+    }
+
+    pub fn record_error(&self) {
+        self.errors.fetch_add(1, Ordering::Relaxed);
+        self.requests.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_cache_hit(&self) {
+        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// True when another model call would pass a configured cap.
+    pub fn over_budget(&self) -> bool {
+        let max_requests = self.max_requests.load(Ordering::Relaxed);
+        let max_tokens = self.max_tokens.load(Ordering::Relaxed);
+        (max_requests > 0 && self.requests.load(Ordering::Relaxed) >= max_requests)
+            || (max_tokens > 0 && self.total_tokens.load(Ordering::Relaxed) >= max_tokens)
+    }
+}
+
+#[cfg(test)]
+mod llm_metrics_tests {
+    use super::*;
+
+    #[test]
+    fn records_success_and_errors() {
+        let m = LlmMetrics::new();
+        m.record_success(Some(10), Some(5), None);
+        m.record_success(Some(2), Some(3), Some(9));
+        m.record_error();
+        assert_eq!(m.requests.load(Ordering::Relaxed), 3);
+        assert_eq!(m.errors.load(Ordering::Relaxed), 1);
+        assert_eq!(m.prompt_tokens.load(Ordering::Relaxed), 12);
+        assert_eq!(m.completion_tokens.load(Ordering::Relaxed), 8);
+        assert_eq!(m.total_tokens.load(Ordering::Relaxed), 24); // 15 + 9
+        m.max_requests.store(3, Ordering::Relaxed);
+        assert!(m.over_budget());
+        m.record_cache_hit();
+        assert_eq!(m.cache_hits.load(Ordering::Relaxed), 1);
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ScanMetrics {
     pub objects_discovered: AtomicU64,
@@ -120,6 +264,8 @@ pub struct ScanMetrics {
     pub failed: AtomicU64,
     pub entities: AtomicU64,
     pub relationships: AtomicU64,
+    /// Shared with [`crate::providers::LlmSemanticProvider`] when LLM is enabled.
+    pub llm: std::sync::Arc<LlmMetrics>,
     started: std::sync::Mutex<Option<Instant>>,
 }
 
@@ -152,7 +298,26 @@ impl ScanMetrics {
             relationships: self.relationships.load(Ordering::Relaxed),
             queue_depth,
             elapsed_ms: self.elapsed_ms(),
+            llm_requests: self.llm.requests.load(Ordering::Relaxed),
+            llm_errors: self.llm.errors.load(Ordering::Relaxed),
+            llm_cache_hits: self.llm.cache_hits.load(Ordering::Relaxed),
+            llm_prompt_tokens: self.llm.prompt_tokens.load(Ordering::Relaxed),
+            llm_completion_tokens: self.llm.completion_tokens.load(Ordering::Relaxed),
+            llm_total_tokens: self.llm.total_tokens.load(Ordering::Relaxed),
+            llm_max_requests: self.llm.max_requests.load(Ordering::Relaxed),
+            llm_max_tokens: self.llm.max_tokens.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn unrecord_status(&self, status: crate::status::UnderstandingStatus) {
+        use crate::status::UnderstandingStatus::*;
+        let counter = match status {
+            Understood => &self.understood,
+            PartiallyUnderstood => &self.partial,
+            Unknown => &self.unknown,
+            Failed => &self.failed,
+        };
+        counter.fetch_sub(1, Ordering::Relaxed);
     }
 
     pub fn record_status(&self, status: crate::status::UnderstandingStatus) {

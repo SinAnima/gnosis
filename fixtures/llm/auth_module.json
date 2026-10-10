@@ -1,0 +1,26 @@
+{
+  "summary": "authentication module",
+  "status": "partial",
+  "entities": [
+    {
+      "kind": "module",
+      "name": "auth",
+      "attributes": { "role": "security" },
+      "confidence": "medium"
+    },
+    {
+      "kind": "concept",
+      "name": "session",
+      "confidence": "inferred"
+    }
+  ],
+  "relationships": [
+    {
+      "kind": "manages",
+      "from": "auth",
+      "to": "session",
+      "confidence": "low"
+    }
+  ],
+  "diagnostics": []
+}

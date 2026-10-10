@@ -1,0 +1,22 @@
+name: Setup gnosis
+description: Install gnosis from GitHub Releases (no Rust toolchain)
+inputs:
+  version:
+    description: Release version without leading v (default latest)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install gnosis
+      shell: bash
+      env:
+        GNOSIS_VERSION: ${{ inputs.version }}
+        GNOSIS_REPO: SinAnima/gnosis
+        GNOSIS_INSTALL_DIR: ${{ runner.temp }}/bin
+      run: |
+        set -euo pipefail
+        mkdir -p "${GNOSIS_INSTALL_DIR}"
+        curl -fsSL "https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh" | sh
+        echo "${GNOSIS_INSTALL_DIR}" >> "$GITHUB_PATH"
+        "${GNOSIS_INSTALL_DIR}/gnosis" --version

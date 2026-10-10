@@ -1,7 +1,7 @@
 # Gnosis
 
-[![CI](https://github.com/thanos/gnosis/actions/workflows/ci.yml/badge.svg)](https://github.com/thanos/gnosis/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/thanos/gnosis/badge.svg?branch=main)](https://coveralls.io/github/thanos/gnosis?branch=main)
+[![CI](https://github.com/SinAnima/gnosis/actions/workflows/ci.yml/badge.svg)](https://github.com/SinAnima/gnosis/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/SinAnima/gnosis/badge.svg?branch=main)](https://coveralls.io/github/SinAnima/gnosis?branch=main)
 [![crates.io](https://img.shields.io/crates/v/gnosis.svg)](https://crates.io/crates/gnosis)
 [![docs.rs](https://docs.rs/gnosis/badge.svg)](https://docs.rs/gnosis)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -18,21 +18,68 @@ This is a proof of concept — not a search engine, vector database, or chat UI.
 
 ## Install
 
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) (with `SHA256SUMS`). Prefer a package manager or `install.sh` for day-to-day use; `cargo install` is the contributor path. Packaging is scaffolded with [sastri](https://crates.io/crates/sastri) (`Sastri.toml`). CI and the release workflow stay in this repo and are not regenerated.
+
+### Homebrew
+
+From [SinAnima/homebrew-tap](https://github.com/SinAnima/homebrew-tap) (fill formula checksums from `SHA256SUMS` after each release):
+
+```bash
+brew install SinAnima/tap/gnosis
+```
+
+### Scoop (Windows)
+
+From [SinAnima/scoop-bucket](https://github.com/SinAnima/scoop-bucket):
+
+```powershell
+scoop bucket add SinAnima https://github.com/SinAnima/scoop-bucket
+scoop install gnosis
+```
+
+### mise
+
+See [packaging/mise/README.md](packaging/mise/README.md).
+
+```bash
+mise use -g github:SinAnima/gnosis@0.2.0
+```
+
+### asdf
+
+From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis) (push `packaging/asdf-gnosis` there):
+
+```bash
+asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
+asdf install gnosis 0.2.0
+```
+
+### install.sh
+
+Installs the latest tag into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin with `GNOSIS_VERSION=v0.2.0`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
+```
+
 ### From crates.io
 
 ```bash
 cargo install gnosis
+# with optional LLM semantic extraction:
+cargo install gnosis --features llm
 ```
 
 ### From source
 
 ```bash
-cargo install --git https://github.com/thanos/gnosis
+cargo install --git https://github.com/SinAnima/gnosis
 # or from a checkout:
 cargo install --path .
+cargo install --path . --features llm
 ```
 
-Prebuilt binaries for Linux, macOS, and Windows are attached to [GitHub Releases](https://github.com/thanos/gnosis/releases) on each `v*` tag (with `SHA256SUMS`).
+Templates under [`packaging/`](packaging/) are regenerated with `sastri generate --force` (CI and release workflows are owned by this repo and stay out of Sastri generation).
 
 ## Quick start
 
@@ -79,6 +126,12 @@ gnosis scan s3://my-bucket/path/prefix --region us-east-1
 | `--max-attempts <n>` | Attempts per job including the first (default: 3; `1` disables retries) |
 | `--retry-base-ms <ms>` | Initial retry backoff, doubled after each failure (default: 250) |
 | `--retry-max-ms <ms>` | Upper bound on retry backoff (default: 30000) |
+| `--llm [MODEL]` | Enable LLM semantic provider (needs `--features llm`). Default model: `gpt-4o-mini` |
+| `--llm-mode <mode>` | `fallback` (images/OCR/unknown; default) or `always` (Partial on all; Full deterministic still wins) |
+| `--llm-max-requests <n>` | Stop further model calls after n requests (`0` = unlimited) |
+| `--llm-max-tokens <n>` | Stop further model calls after n total tokens (`0` = unlimited) |
+| `--llm-allow-secrets` | Send objects even when they look like they contain secrets |
+| `--llm-cache-dir <path>` | Cached replies (default `.gnosis/llm-cache`) |
 
 Local scans are recursive under `<path>` (via `ignore::WalkBuilder`). Descent skips `.gitignore` matches, `target` / `node_modules` / `.git` / `knowledge.okf` / `.gnosis`, and does not follow symlinks.
 
@@ -87,6 +140,43 @@ S3 scans list object keys under the bucket (or prefix), skip directory markers (
 Every discovered artifact is enqueued as a durable `analyze_object` job (function kind + JSON args + result/error). Async workers claim jobs from the store; the default backend is [redb](https://docs.rs/redb).
 
 A job that fails is retried automatically with exponential backoff: after attempt `n` it goes back to `pending` with `available_at = now + min(retry_max_ms, retry_base_ms * 2^(n-1))`, and no worker can claim it until then. It is only marked `failed` once `--max-attempts` is exhausted; the stored error keeps the attempt count.
+
+### LLM semantic extraction (optional)
+
+Build with `--features llm`, then:
+
+```sh
+# Fallback: images / PDFs / unknown binaries (deterministic Full providers still win)
+gnosis scan ./repo --llm --no-tui
+gnosis scan ./repo --llm gpt-4o-mini --llm-mode fallback
+
+# Prefer Partial LLM over plaintext for leftover text/*; Full Tree-sitter still wins
+gnosis scan ./repo --llm claude-3-haiku-20240307 --llm-mode always
+
+# Local Ollama
+gnosis scan ./repo --llm tinyllama:latest --no-tui
+```
+
+The model id selects an adapter: OpenAI (`gpt-…`, `OPENAI_API_KEY`), Anthropic (`claude-…`, `ANTHROPIC_API_KEY`), Gemini (`gemini-…`, `GEMINI_API_KEY`), or Ollama (anything else, including `tinyllama:latest`; no key). Prefix the id with `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one. A scan without `--llm` never calls a model. Full Tree-sitter, Markdown, and data providers still win over the LLM.
+
+Prompt packs are chosen per object (`code`, `code_review`, `docs`, `data`, `image`, `ocr`, `generic`).
+
+Every LLM entity and relationship is stamped `origin=llm`, the model id, the prompt kind, a prompt version, and `review=pending`. Pending claims stay in the OKF bundle. Accept one after export:
+
+```sh
+gnosis review list
+gnosis review accept ent:module:auth@src/lib.rs
+```
+
+During a TUI scan the same commands are `:review` and `:review accept <id>`. Accepted marks in the live scan are in memory only; `gnosis review accept` edits the exported bundle.
+
+Repeat scans reuse `.gnosis/llm-cache` when the content fingerprint, model, prompt kind, and prompt version match. That skips the model call. It does not skip visiting the file.
+
+```sh
+gnosis scan ./repo --llm tinyllama:latest --llm-max-requests 20 --llm-max-tokens 100000
+```
+
+`0` on either cap means unlimited. Hitting a cap records the object as partial with reason `llm budget exhausted` and continues the scan. Objects that look like a private key, an AWS access key, or an API token are not sent unless you pass `--llm-allow-secrets`. Token totals in the TUI depend on the provider; Ollama often reports 0.
 
 ### Jobs CLI
 
@@ -115,7 +205,7 @@ gnosis jobs rerun abc123de,def456 --no-run
 
 ### TUI commands (`:`)
 
-`summary` · `objects [status]` · `unknown` · `providers` · `stats` · `jobs [status]` · `job <id>` · `find <text>` · `explain <name>` · `graph <name>` · `export okf [path]` · `quit`
+`summary` · `objects [status]` · `unknown` · `providers` · `stats` · `review` · `review accept <id>` · `jobs [status]` · `job <id>` · `find <text>` · `explain <name>` · `graph <name>` · `export okf [path]` · `quit`
 
 Shortcuts: `s` summary · `u` unknown · `e` export · `J` jobs · `q` quit
 
@@ -132,7 +222,7 @@ Shortcuts: `s` summary · `u` unknown · `e` export · `J` jobs · `q` quit
 - Demo / PoC of “compile tree → structured knowledge”
 - Export a portable knowledge directory for humans or agents
 
-Not for yet: remote Git hosts, web crawl, PDFs/office, vectors/RAG, or chat (see [Limitations](#limitations)).
+Not for yet: remote Git hosts, web crawl, office docs as first-class parsers, vectors/RAG, or chat (see [Limitations](#limitations)).
 
 ## Library usage
 
@@ -182,7 +272,8 @@ gnosis (one crate)
 ├── binary: gnosis
 └── library modules:
     ├── connectors, pipeline, store, query
-    ├── providers (tree-sitter + docs/data + generic)
+    ├── providers (tree-sitter + docs/data + generic [+ optional llm])
+    ├── prompts (LLM prompt packs by content kind)
     ├── okf (export)
     └── tui (Ratatui UI)
 ```
@@ -196,12 +287,13 @@ Events flow over a bounded channel so the TUI observes progress without coupling
 - **Code:** C++, Rust, Elixir via Tree-sitter (modules, types, functions, imports/includes, inheritance where syntactic)
 - **Docs:** Markdown, plain text
 - **Data:** JSON, YAML, TOML, CSV (bounded)
+- **LLM (optional `--features llm`):** prompt packs for code, code review, docs, data, image analysis, OCR, and generic objects — emits inferred entities/relationships when `--llm` is set
 - **Everything else:** honest unknown / partial with metadata and a candidate future provider category
 
 ## Limitations
 
 - Connectors today: local filesystem and S3 (no remote Git hosts, web crawl)
-- No LLM providers, vectors, or persistent index
+- LLM provider is opt-in (`--features llm` + `--llm`). LLM claims are inferences (`origin=llm`, `review=pending`) and never replace a Full deterministic provider. No vectors or persistent semantic index
 - Tree-sitter is syntactic — not compiler-grade semantics
 - Git enrichment uses the `git` CLI when available (filesystem scans only; not a pure-Rust Git library)
 - OKF export is a hand-written markdown+YAML bundle plus `sidecar.json` (not the `okf` crates.io crate)

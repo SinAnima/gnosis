@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# asdf install gnosis <version>
+version="${ASDF_INSTALL_VERSION:?}"
+install_path="${ASDF_INSTALL_PATH:?}"
+repo="${ASDF_GNOSIS_REPO:-SinAnima/gnosis}"
+tag="v${version#v}"
+
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
+case "${os}" in
+  linux) platform_os="linux" ;;
+  darwin) platform_os="macos" ;;
+  *) echo "unsupported OS: ${os}" >&2; exit 1 ;;
+esac
+case "${arch}" in
+  x86_64|amd64) platform_arch="x86_64" ;;
+  aarch64|arm64) platform_arch="aarch64" ;;
+  *) echo "unsupported arch: ${arch}" >&2; exit 1 ;;
+esac
+
+platform="${platform_os}-${platform_arch}"
+archive="gnosis-${tag}-${platform}.tar.gz"
+url="https://github.com/${repo}/releases/download/${tag}/${archive}"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+curl -fsSL "${url}" -o "${tmp}/${archive}"
+tar -xzf "${tmp}/${archive}" -C "${tmp}"
+mkdir -p "${install_path}/bin"
+install -m 0755 "${tmp}/gnosis" "${install_path}/bin/gnosis"

@@ -278,6 +278,29 @@ impl TuiApp {
         }
     }
 
+    fn show_review(&mut self, cmd: &str) {
+        let rest = cmd.strip_prefix("review").unwrap_or("").trim();
+        if rest.is_empty() || rest == "list" {
+            let store = self.store.lock().unwrap();
+            self.output_message = crate::review::format_reviews(&store.review_rows());
+            return;
+        }
+        let Some(id) = rest.strip_prefix("accept") else {
+            self.output_message = "usage: review | review accept <id>".into();
+            return;
+        };
+        let id = id.trim();
+        if id.is_empty() {
+            self.output_message = "usage: review accept <id>".into();
+            return;
+        }
+        let mut store = self.store.lock().unwrap();
+        self.output_message = match store.accept_review(id) {
+            Ok(accepted) => format!("accepted {accepted}"),
+            Err(err) => err,
+        };
+    }
+
     fn run_command(&mut self, cmd: &str) {
         let cmd = cmd.trim();
         if cmd.is_empty() {
@@ -290,7 +313,7 @@ impl TuiApp {
         self.show_output = true;
         if cmd == "help" {
             self.output_message =
-                "commands: summary | objects | unknown | providers | stats | jobs [status] | job <id> | find <t> | explain <n> | graph <n> | export okf [path] | quit".into();
+                "commands: summary | objects | unknown | providers | stats | review [accept <id>] | jobs [status] | job <id> | find <t> | explain <n> | graph <n> | export okf [path] | quit".into();
             return;
         }
 
@@ -300,6 +323,10 @@ impl TuiApp {
         }
         if cmd == "job" || cmd.starts_with("job ") {
             self.show_job_detail(cmd);
+            return;
+        }
+        if cmd == "review" || cmd.starts_with("review ") {
+            self.show_review(cmd);
             return;
         }
 
@@ -315,8 +342,28 @@ impl TuiApp {
             return;
         }
         if cmd == "stats" {
+            let snap = self.metrics.snapshot(0);
             let s = q.stats();
-            self.output_message = format!("{s:?}");
+            self.output_message = format!(
+                "scan metrics:\n  discovered: {}\n  bytes: {}\n  understood/partial/unknown/failed: {}/{}/{}/{}\n  entities/relationships: {}/{}\n  elapsed_ms: {}\n  llm_requests: {} (errors {}) cache_hits: {}\n  llm_tokens: {} total (prompt {} / completion {})\n  llm_budget: requests {} / tokens {} (0 = unlimited)\n\ninventory:\n  {s:?}",
+                snap.objects_discovered,
+                snap.bytes_considered,
+                snap.understood,
+                snap.partial,
+                snap.unknown,
+                snap.failed,
+                snap.entities,
+                snap.relationships,
+                snap.elapsed_ms,
+                snap.llm_requests,
+                snap.llm_errors,
+                snap.llm_cache_hits,
+                snap.llm_total_tokens,
+                snap.llm_prompt_tokens,
+                snap.llm_completion_tokens,
+                snap.llm_max_requests,
+                snap.llm_max_tokens,
+            );
             return;
         }
         if cmd == "unknown" {
@@ -490,7 +537,7 @@ impl TuiApp {
         let branch = store.git_branch().unwrap_or("n/a");
         let providers = store.enabled_providers().join(", ");
         let text = format!(
-            "Root: {}\nConnector: {}\nGit: {}\nDiscovered: {}\nQueue: {}\nBytes: {}\nProviders: {}\nScan id: {}\nScan: {}",
+            "Root: {}\nConnector: {}\nGit: {}\nDiscovered: {}\nQueue: {}\nBytes: {}\nProviders: {}\nScan id: {}\nScan: {}\nLLM: {} req ({} err, {} cache)  tokens {} (prompt {} / completion {})",
             self.root.display(),
             store.connector().unwrap_or("unknown"),
             branch,
@@ -499,7 +546,13 @@ impl TuiApp {
             snap.bytes_considered,
             providers,
             self.scan_id.as_deref().unwrap_or("(pending)"),
-            if self.scan_done { "complete" } else { "running" }
+            if self.scan_done { "complete" } else { "running" },
+            snap.llm_requests,
+            snap.llm_errors,
+            snap.llm_cache_hits,
+            snap.llm_total_tokens,
+            snap.llm_prompt_tokens,
+            snap.llm_completion_tokens,
         );
         let widget = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title("Sources"))
@@ -510,8 +563,15 @@ impl TuiApp {
     fn draw_activity(&self, f: &mut ratatui::Frame<'_>, area: Rect) {
         let snap = self.metrics.snapshot(0);
         let header = format!(
-            "done u/p/u/f: {}/{}/{}/{}  elapsed {}ms",
-            snap.understood, snap.partial, snap.unknown, snap.failed, snap.elapsed_ms
+            "done u/p/u/f: {}/{}/{}/{}  elapsed {}ms  llm {}req/{}cache/{}tok",
+            snap.understood,
+            snap.partial,
+            snap.unknown,
+            snap.failed,
+            snap.elapsed_ms,
+            snap.llm_requests,
+            snap.llm_cache_hits,
+            snap.llm_total_tokens
         );
         let items: Vec<ListItem> = self
             .event_log
