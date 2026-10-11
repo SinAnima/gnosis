@@ -27,6 +27,7 @@ fn cli_about_and_help() {
 fn cli_scan_headless_summary() {
     let dir = TempDir::new().unwrap();
     let job_db = dir.path().join("jobs.redb");
+    let knowledge_db = dir.path().join("knowledge.redb");
     Command::new(cargo_bin!("gnosis"))
         .args([
             "scan",
@@ -35,6 +36,8 @@ fn cli_scan_headless_summary() {
             "--quiet",
             "--job-db",
             job_db.to_str().unwrap(),
+            "--knowledge-db",
+            knowledge_db.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -47,6 +50,7 @@ fn cli_scan_headless_export() {
     let dir = TempDir::new().unwrap();
     let out = dir.path().join("out.okf");
     let job_db = dir.path().join("jobs.redb");
+    let knowledge_db = dir.path().join("knowledge.redb");
     Command::new(cargo_bin!("gnosis"))
         .args([
             "scan",
@@ -58,6 +62,8 @@ fn cli_scan_headless_export() {
             out.to_str().unwrap(),
             "--job-db",
             job_db.to_str().unwrap(),
+            "--knowledge-db",
+            knowledge_db.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -86,6 +92,7 @@ fn cli_scan_invalid_s3_uri_fails() {
 fn cli_jobs_list_and_show() {
     let dir = TempDir::new().unwrap();
     let job_db = dir.path().join("jobs.redb");
+    let knowledge_db = dir.path().join("knowledge.redb");
     // Seed the db via a headless scan.
     Command::new(cargo_bin!("gnosis"))
         .args([
@@ -95,6 +102,8 @@ fn cli_jobs_list_and_show() {
             "--quiet",
             "--job-db",
             job_db.to_str().unwrap(),
+            "--knowledge-db",
+            knowledge_db.to_str().unwrap(),
         ])
         .assert()
         .success();

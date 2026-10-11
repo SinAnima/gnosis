@@ -113,6 +113,10 @@ pub struct ScanConfig {
     pub queue_capacity: usize,
     /// Persistent job database path (redb). Default: `.gnosis/jobs.redb`.
     pub job_db_path: PathBuf,
+    /// Persistent knowledge database (redb). Default: `.gnosis/knowledge.redb`.
+    pub knowledge_db_path: PathBuf,
+    /// Ignore the knowledge store and analyze every object.
+    pub reanalyze: bool,
     /// Worker poll interval when the queue is empty.
     pub job_poll_ms: u64,
     /// Auto-retry policy for failed analyze jobs.
@@ -144,6 +148,8 @@ impl Default for ScanConfig {
             skip_output_dir_name: "knowledge.okf".into(),
             queue_capacity: 1024,
             job_db_path: PathBuf::from(".gnosis/jobs.redb"),
+            knowledge_db_path: PathBuf::from(".gnosis/knowledge.redb"),
+            reanalyze: false,
             job_poll_ms: 25,
             retry: crate::jobs::RetryPolicy::default(),
             llm: None,
@@ -264,6 +270,9 @@ pub struct ScanMetrics {
     pub failed: AtomicU64,
     pub entities: AtomicU64,
     pub relationships: AtomicU64,
+    pub objects_analyzed: AtomicU64,
+    pub objects_skipped: AtomicU64,
+    counted: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Shared with [`crate::providers::LlmSemanticProvider`] when LLM is enabled.
     pub llm: std::sync::Arc<LlmMetrics>,
     started: std::sync::Mutex<Option<Instant>>,
@@ -318,6 +327,16 @@ impl ScanMetrics {
             Failed => &self.failed,
         };
         counter.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Remember that this object's status was added to the counters.
+    pub fn mark_counted(&self, id: &str) {
+        self.counted.lock().unwrap().insert(id.to_string());
+    }
+
+    /// True once, if `mark_counted` was called for this id.
+    pub fn take_counted(&self, id: &str) -> bool {
+        self.counted.lock().unwrap().remove(id)
     }
 
     pub fn record_status(&self, status: crate::status::UnderstandingStatus) {

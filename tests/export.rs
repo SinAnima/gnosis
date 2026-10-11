@@ -41,6 +41,7 @@ fn okf_export_writes_bundle_layout() {
             modified: None,
             media_type: "text/x-rust".into(),
             extension: Some("rs".into()),
+            etag: None,
         },
         proto: ProtoData::default(),
         status: UnderstandingStatus::Understood,
@@ -73,4 +74,68 @@ fn okf_export_writes_bundle_layout() {
     assert!(out.join("relationships").is_dir());
     assert!(std::fs::read_dir(out.join("entities")).unwrap().count() >= 2);
     assert_eq!(OkfExporter::new().name(), "okf");
+}
+
+#[test]
+fn okf_export_rewrites_changed_pages_and_drops_deleted_ones() {
+    let dir = TempDir::new().unwrap();
+    let out = dir.path().join("knowledge.okf");
+    let mut store = two_objects();
+    OkfExporter::new().export(&store, &out).unwrap();
+
+    let kept = out.join("objects").join("a.rs.md");
+    let rewritten = out.join("objects").join("b.rs.md");
+    std::fs::write(&kept, "---\nid: obj:a.rs\n---\n\nKEEP\n").unwrap();
+    std::fs::write(&rewritten, "---\nid: obj:b.rs\n---\n\nOLD\n").unwrap();
+
+    store.set_reason(&ObjectId::new("obj:a.rs"), "unchanged");
+    let mut changed = store
+        .get_object(&ObjectId::new("obj:b.rs"))
+        .unwrap()
+        .clone();
+    changed.classification_reason = Some("edited".into());
+    store.replace_analysis(changed, Vec::new(), Vec::new());
+    OkfExporter::new().export(&store, &out).unwrap();
+
+    let kept_text = std::fs::read_to_string(&kept).unwrap();
+    assert!(kept_text.contains("KEEP"), "{kept_text}");
+    let rewritten_text = std::fs::read_to_string(&rewritten).unwrap();
+    assert!(rewritten_text.contains("edited"), "{rewritten_text}");
+    assert!(out.join("index.md").is_file());
+
+    store.remove_object(&ObjectId::new("obj:b.rs"));
+    OkfExporter::new().export(&store, &out).unwrap();
+    assert!(!rewritten.exists());
+    assert!(kept.exists());
+}
+
+fn two_objects() -> KnowledgeStore {
+    let mut store = KnowledgeStore::new();
+    for name in ["a.rs", "b.rs"] {
+        let id = ObjectId::new(format!("obj:{name}"));
+        store.replace_analysis(
+            StoredObject {
+                descriptor: ObjectDescriptor {
+                    id,
+                    path: PathBuf::from(format!("/repo/{name}")),
+                    relative_path: PathBuf::from(name),
+                    is_dir: false,
+                    size: 1,
+                    modified: None,
+                    media_type: "text/x-rust".into(),
+                    extension: Some("rs".into()),
+                    etag: None,
+                },
+                proto: ProtoData::default(),
+                status: UnderstandingStatus::Understood,
+                provider: Some(ProviderId::new("test")),
+                classification_reason: Some("ok".into()),
+                entity_ids: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+            Vec::new(),
+            Vec::new(),
+        );
+    }
+    store
 }

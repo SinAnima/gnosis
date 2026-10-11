@@ -100,6 +100,7 @@ pub struct S3ObjectMeta {
     pub key: String,
     pub size: u64,
     pub last_modified: Option<SystemTime>,
+    pub etag: Option<String>,
 }
 
 /// Minimal S3 surface so discovery/read can be unit-tested without AWS.
@@ -167,6 +168,7 @@ impl S3Backend for AwsS3Backend {
                         key,
                         size,
                         last_modified,
+                        etag: obj.e_tag().map(|tag| tag.trim_matches('"').to_string()),
                     });
                 }
 
@@ -246,6 +248,7 @@ impl S3Backend for MemoryS3Backend {
                 key: key.clone(),
                 size: bytes.len() as u64,
                 last_modified: modified.get(&(bucket.to_string(), key.clone())).copied(),
+                etag: Some(blake3::hash(bytes).to_hex().to_string()),
             });
         }
         Ok(out)
@@ -317,7 +320,13 @@ impl<B: S3Backend> S3Connector<B> {
                 continue;
             }
 
-            let desc = descriptor_for_key(&self.location, relative, meta.size, meta.last_modified);
+            let desc = descriptor_for_key(
+                &self.location,
+                relative,
+                meta.size,
+                meta.last_modified,
+                meta.etag.clone(),
+            );
             let _ = events.send(PipelineEvent::ObjectDiscovered {
                 id: desc.id.clone(),
                 path: desc.relative_path.clone(),
@@ -387,6 +396,7 @@ fn descriptor_for_key(
     relative: &str,
     size: u64,
     modified: Option<SystemTime>,
+    etag: Option<String>,
 ) -> ObjectDescriptor {
     let relative_path = PathBuf::from(relative);
     let path = PathBuf::from(format!(
@@ -410,6 +420,7 @@ fn descriptor_for_key(
         modified,
         media_type,
         extension,
+        etag,
     }
 }
 
@@ -511,5 +522,18 @@ mod tests {
         let bytes = connector.read_object_bytes(readme, 1024).unwrap();
         assert_eq!(bytes, b"# hi");
         assert_eq!(readme.path.to_string_lossy(), "s3://b/docs/readme.md");
+        assert!(readme.etag.is_some());
+    }
+
+    #[test]
+    fn etag_changes_when_bytes_change() {
+        let backend = MemoryS3Backend::new();
+        backend.put("b", "a.h", b"int x;");
+        let first = backend.list_objects("b", "").unwrap();
+        backend.put("b", "a.h", b"int y;");
+        let second = backend.list_objects("b", "").unwrap();
+        assert_ne!(first[0].etag, second[0].etag);
+        let again = backend.list_objects("b", "").unwrap();
+        assert_eq!(second[0].etag, again[0].etag);
     }
 }

@@ -55,6 +55,12 @@ enum Commands {
         /// Persistent job queue database (redb). Default: `.gnosis/jobs.redb`
         #[arg(long, default_value = ".gnosis/jobs.redb")]
         job_db: PathBuf,
+        /// Persistent knowledge database (redb). Default: `.gnosis/knowledge.redb`
+        #[arg(long, default_value = ".gnosis/knowledge.redb")]
+        knowledge_db: PathBuf,
+        /// Analyze every object even when the fingerprint and provider version match
+        #[arg(long)]
+        reanalyze: bool,
         /// Max attempts per job including the first (default: 3; `1` disables retries)
         #[arg(long, default_value_t = 3)]
         max_attempts: u32,
@@ -94,6 +100,33 @@ enum Commands {
     Jobs {
         #[command(subcommand)]
         command: JobsCommands,
+    },
+    /// Compare two knowledge snapshots (default: the latest two)
+    Diff {
+        /// Older snapshot id or unique prefix
+        from: Option<String>,
+        /// Newer snapshot id or unique prefix
+        to: Option<String>,
+        /// Persistent knowledge database
+        #[arg(long, default_value = ".gnosis/knowledge.redb")]
+        knowledge_db: PathBuf,
+    },
+    /// Re-run an incremental filesystem scan when files change
+    Watch {
+        /// Local directory
+        path: String,
+        /// Quiet period after the last change, in milliseconds
+        #[arg(long, default_value_t = 400)]
+        debounce_ms: u64,
+        /// Persistent job queue database
+        #[arg(long, default_value = ".gnosis/jobs.redb")]
+        job_db: PathBuf,
+        /// Persistent knowledge database
+        #[arg(long, default_value = ".gnosis/knowledge.redb")]
+        knowledge_db: PathBuf,
+        /// Maximum object size in bytes
+        #[arg(long, default_value_t = 2 * 1024 * 1024)]
+        max_size: u64,
     },
     /// Show product overview
     About,
@@ -218,6 +251,9 @@ enum ReviewCommands {
         /// OKF bundle directory
         #[arg(long, default_value = "knowledge.okf")]
         okf: PathBuf,
+        /// Persistent knowledge database
+        #[arg(long, default_value = ".gnosis/knowledge.redb")]
+        knowledge_db: PathBuf,
     },
     /// Mark one LLM claim accepted (id or unique prefix)
     Accept {
@@ -225,6 +261,9 @@ enum ReviewCommands {
         /// OKF bundle directory
         #[arg(long, default_value = "knowledge.okf")]
         okf: PathBuf,
+        /// Persistent knowledge database
+        #[arg(long, default_value = ".gnosis/knowledge.redb")]
+        knowledge_db: PathBuf,
     },
 }
 
@@ -254,6 +293,8 @@ fn main() -> Result<()> {
             llm_max_tokens,
             llm_allow_secrets,
             llm_cache_dir,
+            knowledge_db,
+            reanalyze,
         } => run_scan(
             path,
             no_tui,
@@ -271,7 +312,21 @@ fn main() -> Result<()> {
             llm_max_tokens,
             llm_allow_secrets,
             llm_cache_dir,
+            knowledge_db,
+            reanalyze,
         ),
+        Commands::Diff {
+            from,
+            to,
+            knowledge_db,
+        } => run_diff(from, to, knowledge_db),
+        Commands::Watch {
+            path,
+            debounce_ms,
+            job_db,
+            knowledge_db,
+            max_size,
+        } => run_watch(path, debounce_ms, job_db, knowledge_db, max_size),
         Commands::Review { command } => run_review(command),
         Commands::Jobs { command } => run_jobs(command),
     }
@@ -279,16 +334,116 @@ fn main() -> Result<()> {
 
 fn run_review(command: ReviewCommands) -> Result<()> {
     match command {
-        ReviewCommands::List { okf } => {
+        ReviewCommands::List { okf, knowledge_db } => {
+            if knowledge_db.exists() {
+                let db = gnosis::KnowledgeDb::open(&knowledge_db)
+                    .with_context(|| format!("open knowledge db {}", knowledge_db.display()))?;
+                let rows = db.review_rows().map_err(|e| anyhow::anyhow!(e))?;
+                println!("{}", gnosis::review::format_reviews(&rows));
+                return Ok(());
+            }
             let rows = gnosis::review::list_okf(&okf).map_err(|e| anyhow::anyhow!(e))?;
             println!("{}", gnosis::review::format_reviews(&rows));
             Ok(())
         }
-        ReviewCommands::Accept { id, okf } => {
-            let accepted = gnosis::review::accept_okf(&okf, &id).map_err(|e| anyhow::anyhow!(e))?;
-            println!("accepted {accepted}");
-            Ok(())
+        ReviewCommands::Accept {
+            id,
+            okf,
+            knowledge_db,
+        } => {
+            let mut accepted = None;
+            if knowledge_db.exists() {
+                let db = gnosis::KnowledgeDb::open(&knowledge_db)
+                    .with_context(|| format!("open knowledge db {}", knowledge_db.display()))?;
+                let rows = db.review_rows().map_err(|e| anyhow::anyhow!(e))?;
+                let target = gnosis::review::resolve_review_id(&rows, &id)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                if db
+                    .persist_review(&target, "accepted")
+                    .map_err(|e| anyhow::anyhow!(e))?
+                {
+                    accepted = Some(target);
+                }
+            }
+            if okf.exists() {
+                let from_okf =
+                    gnosis::review::accept_okf(&okf, &id).map_err(|e| anyhow::anyhow!(e))?;
+                accepted = Some(from_okf);
+            }
+            match accepted {
+                Some(id) => {
+                    println!("accepted {id}");
+                    Ok(())
+                }
+                None => bail!("review target not found: {id}"),
+            }
         }
+    }
+}
+
+fn run_diff(from: Option<String>, to: Option<String>, knowledge_db: PathBuf) -> Result<()> {
+    let db = gnosis::KnowledgeDb::open(&knowledge_db)
+        .with_context(|| format!("open knowledge db {}", knowledge_db.display()))?;
+    let (older, newer) = match (from, to) {
+        (Some(from), Some(to)) => (
+            db.resolve_snapshot(&from).map_err(|e| anyhow::anyhow!(e))?,
+            db.resolve_snapshot(&to).map_err(|e| anyhow::anyhow!(e))?,
+        ),
+        (None, None) => db
+            .latest_pair()
+            .map_err(|e| anyhow::anyhow!(e))?
+            .ok_or_else(|| anyhow::anyhow!("need at least two snapshots; scan twice first"))?,
+        _ => bail!("pass both snapshot ids, or neither to compare the latest two"),
+    };
+    println!("{}", gnosis::format_diff(&older, &newer));
+    Ok(())
+}
+
+fn run_watch(
+    path: String,
+    debounce_ms: u64,
+    job_db: PathBuf,
+    knowledge_db: PathBuf,
+    max_size: u64,
+) -> Result<()> {
+    if is_s3_uri(&path) {
+        bail!("gnosis watch is filesystem-only");
+    }
+    let root = PathBuf::from(&path);
+    if !root.exists() {
+        bail!("path does not exist: {}", root.display());
+    }
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("canonicalize {}", root.display()))?;
+    loop {
+        run_scan(
+            root.display().to_string(),
+            true,
+            true,
+            max_size,
+            None,
+            PathBuf::from("knowledge.okf"),
+            false,
+            None,
+            job_db.clone(),
+            RetryPolicy::new(3, 250, 30_000),
+            None,
+            "fallback".to_string(),
+            0,
+            0,
+            false,
+            PathBuf::from(".gnosis/llm-cache"),
+            knowledge_db.clone(),
+            false,
+        )?;
+        eprintln!(
+            "watching {} — next scan after {}ms of quiet (Ctrl-C to stop)",
+            root.display(),
+            debounce_ms
+        );
+        gnosis::watch::wait_for_change(&root, Duration::from_millis(debounce_ms.max(1)))
+            .map_err(|e| anyhow::anyhow!(e))?;
     }
 }
 
@@ -596,6 +751,8 @@ fn run_scan(
     llm_max_tokens: u64,
     llm_allow_secrets: bool,
     llm_cache_dir: PathBuf,
+    knowledge_db: PathBuf,
+    reanalyze: bool,
 ) -> Result<()> {
     let mut config = if is_s3_uri(&path) {
         let location = parse_s3_uri(&path).map_err(|e| anyhow::anyhow!(e))?;
@@ -616,6 +773,8 @@ fn run_scan(
     }
     config.output_path = output.clone();
     config.job_db_path = job_db;
+    config.knowledge_db_path = knowledge_db;
+    config.reanalyze = reanalyze;
     config.retry = retry;
     config.llm = resolve_llm_config(
         llm,
@@ -632,8 +791,17 @@ fn run_scan(
         RedbJobStore::open(&config.job_db_path)
             .with_context(|| format!("open job db {}", config.job_db_path.display()))?,
     );
-    let pipeline =
-        Pipeline::with_job_store_and_metrics(config.clone(), providers, job_store, metrics);
+    let knowledge = Arc::new(
+        gnosis::KnowledgeDb::open(&config.knowledge_db_path)
+            .with_context(|| format!("open knowledge db {}", config.knowledge_db_path.display()))?,
+    );
+    let pipeline = Pipeline::with_knowledge_and_metrics(
+        config.clone(),
+        providers,
+        job_store,
+        metrics.clone(),
+        knowledge,
+    );
     let mut handle = pipeline.spawn();
     let events = handle.take_events();
 
@@ -652,6 +820,16 @@ fn run_scan(
     if no_tui {
         drain_events_headless(events, quiet);
         handle.wait().context("pipeline failed")?;
+
+        let analyzed = handle
+            .metrics
+            .objects_analyzed
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let skipped = handle
+            .metrics
+            .objects_skipped
+            .load(std::sync::atomic::Ordering::Relaxed);
+        println!("analyzed {analyzed}, skipped {skipped} unchanged");
 
         let store = handle.store.lock().unwrap();
         let q = QueryEngine::new(&store);
@@ -756,6 +934,9 @@ const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
   gnosis scan <target> --no-tui --export
   gnosis scan <target> --llm [MODEL] [--llm-mode fallback|always]
   gnosis scan <target> --llm --llm-max-requests N --llm-max-tokens N
+  gnosis scan <target> --reanalyze     Ignore the knowledge store for one scan
+  gnosis watch <path>                Incremental filesystem scan on change
+  gnosis diff                        Compare the latest two snapshots
   gnosis review list [--okf knowledge.okf]
   gnosis review accept <id> [--okf knowledge.okf]
 

@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`cargo audit`** — `h2` 0.4.20 (`RUSTSEC-2026-0258`), `rustls` 0.23.45 (`RUSTSEC-2026-0285`), and unyanked `chacha20` 0.10.2. `aws-sdk-s3` 1.146.1 drops unsound `lru` 0.16 (`RUSTSEC-2026-0253`).
 - **crates.io package size** — the published crate omits the demo PDF and PNGs under `fixtures/mixed-repo/docs/`. Those files stay in git; crates.io rejects uploads over 10 MiB.
 
+## [0.3.0] - 2026-10-11
+
+### Added
+
+- **Incremental compilation** — scans load `.gnosis/knowledge.redb` and skip objects whose bytes, provider, and provider version are unchanged. Filesystem size and mtime, and S3 size and ETag, avoid rereading unchanged objects. `--reanalyze` ignores the store. `--knowledge-db` selects the file.
+- **`gnosis diff`** — compares the latest two scan snapshots (or two snapshot ids) for object, status, entity, and relationship changes.
+- **`gnosis watch <path>`** — filesystem-only. After each scan, waits for a quiet period and scans again. S3 is not watched.
+- **Review marks persist** in the knowledge database. `gnosis review accept` updates that store and, when the bundle is present, the OKF mark.
+
+### Changed
+
+- OKF export rewrites `index.md` from the full store and leaves pages whose object did not change. Deleted objects are removed from the bundle.
+- A changed `#include` or `import` path reanalyzes files that name it. Matching is a path suffix, not a header search.
+
 ## [0.2.0] - 2026-10-10
 
 ### Added
@@ -72,6 +86,7 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/SinAnima/gnosis/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SinAnima/gnosis/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SinAnima/gnosis/releases/tag/v0.1.0

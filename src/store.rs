@@ -4,8 +4,14 @@ use crate::knowledge::{Entity, Relationship};
 use crate::status::UnderstandingStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+/// Writes an accepted review mark back to the durable store.
+pub trait ReviewSink: Send + Sync {
+    fn set_review(&self, id: &str, review: &str) -> std::result::Result<(), String>;
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StoredObject {
     pub descriptor: ObjectDescriptor,
     pub proto: ProtoData,
@@ -31,7 +37,7 @@ pub struct InventoryCounts {
     pub failed: u64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct KnowledgeStore {
     objects: HashMap<ObjectId, StoredObject>,
     entities: HashMap<EntityId, Entity>,
@@ -41,6 +47,13 @@ pub struct KnowledgeStore {
     by_path: HashMap<String, ObjectId>,
     reverse_rels: HashMap<EntityId, HashSet<RelationshipId>>,
     forward_rels: HashMap<EntityId, HashSet<RelationshipId>>,
+    /// Relationships produced by each object, so a rewrite can drop them.
+    produced_rels: HashMap<ObjectId, Vec<RelationshipId>>,
+    /// Why this scan kept or redid each object (`unchanged`, `content`, …).
+    reasons: HashMap<String, String>,
+    /// Objects removed because they were not rediscovered.
+    deleted: Vec<DeletedObject>,
+    review_sink: Option<Arc<dyn ReviewSink>>,
     root: Option<std::path::PathBuf>,
     git_branch: Option<String>,
     connector: Option<String>,
@@ -48,9 +61,53 @@ pub struct KnowledgeStore {
     enabled_providers: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct DeletedObject {
+    pub id: String,
+    pub relative_path: String,
+    pub status: String,
+    pub fingerprint: Option<String>,
+    pub provider_id: Option<String>,
+    pub provider_version: Option<String>,
+    pub entity_ids: Vec<String>,
+    pub relationship_ids: Vec<String>,
+}
+
 impl KnowledgeStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_review_sink(&mut self, sink: Arc<dyn ReviewSink>) {
+        self.review_sink = Some(sink);
+    }
+
+    pub fn set_reason(&mut self, id: &ObjectId, reason: &str) {
+        self.reasons
+            .insert(id.as_str().to_string(), reason.to_string());
+    }
+
+    pub fn reason(&self, id: &ObjectId) -> Option<&str> {
+        self.reasons.get(id.as_str()).map(String::as_str)
+    }
+
+    pub fn unchanged_ids(&self) -> HashSet<String> {
+        self.reasons
+            .iter()
+            .filter(|(_, reason)| reason.as_str() == "unchanged")
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    pub fn deleted_objects(&self) -> &[DeletedObject] {
+        &self.deleted
+    }
+
+    pub fn relationship_ids_for(&self, id: &ObjectId) -> Vec<String> {
+        self.produced_rels
+            .get(id)
+            .map(|ids| ids.iter().map(|rid| rid.as_str().to_string()).collect())
+            .unwrap_or_default()
     }
 
     pub fn set_root(&mut self, root: std::path::PathBuf) {
@@ -153,6 +210,9 @@ impl KnowledgeStore {
         };
         if let Some(entity) = self.entities.values_mut().find(|e| e.id.as_str() == id) {
             entity.attributes.insert("review".into(), "accepted".into());
+            if let Some(sink) = &self.review_sink {
+                sink.set_review(&id, "accepted")?;
+            }
             return Ok(id);
         }
         if let Some(rel) = self
@@ -161,9 +221,119 @@ impl KnowledgeStore {
             .find(|r| r.id.as_str() == id)
         {
             rel.attributes.insert("review".into(), "accepted".into());
+            if let Some(sink) = &self.review_sink {
+                sink.set_review(&id, "accepted")?;
+            }
             return Ok(id);
         }
         Err(format!("review target not found: {q}"))
+    }
+
+    pub fn object_ids(&self) -> Vec<ObjectId> {
+        self.objects.keys().cloned().collect()
+    }
+
+    /// Drop previously derived rows for `object`, then insert the new analysis.
+    pub fn replace_analysis(
+        &mut self,
+        object: StoredObject,
+        entities: Vec<Entity>,
+        relationships: Vec<Relationship>,
+    ) {
+        let id = object.descriptor.id.clone();
+        self.clear_derived(&id);
+        self.upsert_object(object);
+        for entity in entities {
+            self.add_entity(entity);
+        }
+        let mut rel_ids = Vec::new();
+        for rel in relationships {
+            rel_ids.push(rel.id.clone());
+            self.add_relationship(rel);
+        }
+        self.produced_rels.insert(id, rel_ids);
+    }
+
+    pub fn install_record(
+        &mut self,
+        object: StoredObject,
+        entities: Vec<Entity>,
+        relationships: Vec<Relationship>,
+    ) {
+        self.replace_analysis(object, entities, relationships);
+    }
+
+    pub fn remove_object(&mut self, id: &ObjectId) -> Option<DeletedObject> {
+        let object = self.objects.get(id)?;
+        let deleted = DeletedObject {
+            id: id.as_str().to_string(),
+            relative_path: object
+                .descriptor
+                .relative_path
+                .to_string_lossy()
+                .to_string(),
+            status: object.status.as_str().to_string(),
+            fingerprint: object.proto.fingerprint.clone(),
+            provider_id: object.provider.as_ref().map(|p| p.as_str().to_string()),
+            provider_version: None,
+            entity_ids: object.entity_ids.iter().map(|e| e.to_string()).collect(),
+            relationship_ids: self.relationship_ids_for(id),
+        };
+        let path_key = object
+            .descriptor
+            .relative_path
+            .to_string_lossy()
+            .to_string();
+        self.by_path.remove(&path_key);
+        self.clear_derived(id);
+        self.objects.remove(id);
+        self.deleted.push(deleted.clone());
+        Some(deleted)
+    }
+
+    fn clear_derived(&mut self, id: &ObjectId) {
+        let listed = self
+            .objects
+            .get(id)
+            .map(|o| o.entity_ids.clone())
+            .unwrap_or_default();
+        let owned: Vec<EntityId> = self
+            .entities
+            .values()
+            .filter(|e| &e.source_object == id)
+            .map(|e| e.id.clone())
+            .collect();
+        let rel_ids = self.produced_rels.remove(id).unwrap_or_default();
+        for rid in rel_ids {
+            self.detach_relationship(&rid);
+        }
+        for eid in listed.into_iter().chain(owned) {
+            self.detach_entity(&eid);
+        }
+    }
+
+    fn detach_entity(&mut self, id: &EntityId) {
+        let Some(entity) = self.entities.remove(id) else {
+            return;
+        };
+        if let Some(set) = self.by_name.get_mut(&entity.name.to_lowercase()) {
+            set.remove(id);
+        }
+        if let Some(set) = self.by_kind.get_mut(&entity.kind) {
+            set.remove(id);
+        }
+    }
+
+    fn detach_relationship(&mut self, id: &RelationshipId) {
+        let Some(rel) = self.relationships.remove(id) else {
+            return;
+        };
+        if let Some(set) = self.forward_rels.get_mut(&rel.from) {
+            set.remove(id);
+        }
+        if let Some(set) = self.reverse_rels.get_mut(&rel.to) {
+            set.remove(id);
+        }
     }
 
     pub fn upsert_object(&mut self, object: StoredObject) {

@@ -78,5 +78,6 @@ fn desc(rel: &str) -> ObjectDescriptor {
         modified: None,
         media_type: "text/x-python".into(),
         extension: Some("py".into()),
+        etag: None,
     }
 }

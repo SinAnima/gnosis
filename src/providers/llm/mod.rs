@@ -315,6 +315,7 @@ mod tests {
             modified: None,
             media_type: media.into(),
             extension,
+            etag: None,
         }
     }
 

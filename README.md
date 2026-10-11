@@ -9,20 +9,17 @@
 
 **Gnosis compiles what you have into what you know.**
 
-Gnosis is an enterprise knowledge compiler: a local-first Rust tool that discovers digital objects in a repository or S3 bucket, extracts structured knowledge with deterministic providers (Tree-sitter and lightweight document/data parsers), shows its work in a live TUI, and exports an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.1-style bundle.
+Point Gnosis at a project folder or an S3 bucket. It reads the files there — source code, Markdown, and data files such as JSON, YAML, TOML, and CSV — and writes down the structure it can see: modules, functions, types, imports, headings, and columns. Watch that happen in the terminal, or run it from a script and keep the result as a folder of Markdown. The next run reads again only the files that changed.
 
-This is a proof of concept — not a search engine, vector database, or chat UI.
-
-<img width="600" alt="Screenshot 2026-07-24 at 15 40 14" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
-
+<img width="600" alt="Gnosis scan in the terminal" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
 
 ## Install
 
-Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) (with `SHA256SUMS`). Prefer a package manager or `install.sh` for day-to-day use; `cargo install` is the contributor path. Packaging is scaffolded with [sastri](https://crates.io/crates/sastri) (`Sastri.toml`). CI and the release workflow stay in this repo and are not regenerated.
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. After each release, Homebrew and Scoop formulas take their checksums from that file.
 
 ### Homebrew
 
-From [SinAnima/homebrew-tap](https://github.com/SinAnima/homebrew-tap) (fill formula checksums from `SHA256SUMS` after each release):
+From [SinAnima/homebrew-tap](https://github.com/SinAnima/homebrew-tap):
 
 ```bash
 brew install SinAnima/tap/gnosis
@@ -42,200 +39,282 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.2.0
+mise use -g github:SinAnima/gnosis@0.3.0
 ```
 
 ### asdf
 
-From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis) (push `packaging/asdf-gnosis` there):
+From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.2.0
+asdf install gnosis 0.3.0
 ```
 
 ### install.sh
 
-Installs the latest tag into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin with `GNOSIS_VERSION=v0.2.0`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.3.0`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
 ```
 
-### From crates.io
+### crates.io
 
 ```bash
 cargo install gnosis
-# with optional LLM semantic extraction:
+```
+
+The published binary analyzes code, documents, and data on its own. Model-assisted extraction is a separate install:
+
+```bash
 cargo install gnosis --features llm
 ```
 
-### From source
-
-```bash
-cargo install --git https://github.com/SinAnima/gnosis
-# or from a checkout:
-cargo install --path .
-cargo install --path . --features llm
-```
-
-Templates under [`packaging/`](packaging/) are regenerated with `sastri generate --force` (CI and release workflows are owned by this repo and stay out of Sastri generation).
-
 ## Quick start
 
-```sh
-cargo build --release
-./target/release/gnosis scan ./fixtures/mixed-repo
-```
-
-Headless (CI / scripting):
+Scan the project you are in. The terminal UI updates as files are read:
 
 ```sh
-cargo run -- scan ./fixtures/mixed-repo --no-tui --export
+gnosis scan .
 ```
 
-S3 (bucket = root, keys = paths; default AWS credentials):
+Write the result to `knowledge.okf/` inside that folder and print a summary. This is the form to use in a script:
+
+```sh
+gnosis scan . --no-tui --export
+```
+
+Scan a bucket. Keys are treated as file paths. Gnosis uses the default AWS credential chain. Pass `--region` when the bucket is not in the default region:
 
 ```sh
 gnosis scan s3://my-bucket --no-tui --export
-gnosis scan s3://my-bucket/path/prefix --region us-east-1
+gnosis scan s3://my-bucket/docs/api --region us-east-1
 ```
 
-## Commands
+A finished headless scan prints how many files were analyzed and how many were already known:
 
-| Command | Description |
-|---------|-------------|
-| `gnosis scan <path>` | Live TUI scan (local directory) |
-| `gnosis scan s3://bucket[/prefix]` | Scan an S3 bucket |
-| `gnosis scan <target> --no-tui` | Headless scan + summary |
+```text
+analyzed 3, skipped 40 unchanged
+```
+
+## Using Gnosis
+
+A scan walks a folder or lists an S3 prefix. It skips `target`, `node_modules`, `.git`, `knowledge.okf`, and `.gnosis`. On a local folder it also skips anything matched by `.gitignore`, and it does not follow symlinks.
+
+Each file is classified as **understood**, **partial**, **unknown**, or **failed**. Understood files contribute entities and relationships: functions, types, modules, includes, imports, document headings, and data columns. Unknown files stay in the inventory with their path and media type, so a gap is visible.
+
+The export is a folder of Markdown with YAML frontmatter:
+
+```text
+knowledge.okf/
+├── index.md
+├── sidecar.json
+├── log.md
+├── entities/
+├── objects/
+└── relationships/
+```
+
+Browse it, commit it, or hand it to another tool. For a local scan, a relative `--output` path is created inside the scanned folder. For an S3 scan it is created in the current working directory.
+
+Gnosis remembers the result in `.gnosis/knowledge.redb`, next to the directory where you ran the command. The job queue, used to resume a scan that was interrupted, lives in `.gnosis/jobs.redb`. `gnosis jobs purge` removes old jobs and leaves the knowledge file alone.
+
+### Commands
+
+| Command | What it does |
+|---------|----------------|
+| `gnosis scan <path>` | Scan a folder and show the live UI |
+| `gnosis scan s3://bucket[/prefix]` | Scan a bucket |
+| `gnosis scan <target> --no-tui` | Scan and print a summary |
 | `gnosis scan <target> --no-tui --export` | Also write `knowledge.okf/` |
-| `gnosis about` | Product overview |
+| `gnosis watch <path>` | Scan a folder again after files stop changing |
+| `gnosis diff` | Show what the last two scans changed |
+| `gnosis review list` | List model claims still waiting for review |
+| `gnosis review accept <id>` | Accept one claim |
+| `gnosis jobs …` | Inspect, pause, or rerun the scan queue |
+| `gnosis about` | Short overview of the product |
 
 ### `scan` options
 
 | Flag | Description |
 |------|-------------|
-| `--no-tui` | Headless mode (prints summary) |
-| `--quiet` | Suppress per-object event lines in headless mode |
-| `--export` | Write OKF when the scan finishes (headless) |
-| `--output <dir>` | OKF output directory (default: `knowledge.okf`) |
-| `--max-size <bytes>` | Max bytes read per object (default: 2 MiB) |
-| `--concurrency <n>` | Analysis worker count |
-| `--region <name>` | AWS region for `s3://` scans (default credential chain otherwise) |
-| `--job-db <path>` | Persistent job queue database (default: `.gnosis/jobs.redb`) |
-| `--max-attempts <n>` | Attempts per job including the first (default: 3; `1` disables retries) |
-| `--retry-base-ms <ms>` | Initial retry backoff, doubled after each failure (default: 250) |
-| `--retry-max-ms <ms>` | Upper bound on retry backoff (default: 30000) |
-| `--llm [MODEL]` | Enable LLM semantic provider (needs `--features llm`). Default model: `gpt-4o-mini` |
-| `--llm-mode <mode>` | `fallback` (images/OCR/unknown; default) or `always` (Partial on all; Full deterministic still wins) |
-| `--llm-max-requests <n>` | Stop further model calls after n requests (`0` = unlimited) |
-| `--llm-max-tokens <n>` | Stop further model calls after n total tokens (`0` = unlimited) |
-| `--llm-allow-secrets` | Send objects even when they look like they contain secrets |
-| `--llm-cache-dir <path>` | Cached replies (default `.gnosis/llm-cache`) |
+| `--no-tui` | Print progress and a summary. Use this in scripts |
+| `--quiet` | Hide per-file lines. The summary is still printed |
+| `--export` | Write the Markdown bundle when a headless scan finishes |
+| `--output <dir>` | Bundle directory (default: `knowledge.okf`) |
+| `--max-size <bytes>` | Largest file Gnosis will read (default: 2 MiB) |
+| `--concurrency <n>` | How many files to analyze at once |
+| `--region <name>` | AWS region for `s3://` scans |
+| `--job-db <path>` | Job queue file (default: `.gnosis/jobs.redb`) |
+| `--knowledge-db <path>` | Saved analysis (default: `.gnosis/knowledge.redb`) |
+| `--reanalyze` | Read and analyze every file on this scan |
+| `--max-attempts <n>` | Tries per file, including the first (default: 3). `1` turns retries off |
+| `--retry-base-ms <ms>` | First retry wait, doubled after each failure (default: 250) |
+| `--retry-max-ms <ms>` | Longest retry wait (default: 30000) |
+| `--llm [MODEL]` | Also ask a model about files the built-in readers leave alone. Requires a binary installed with `--features llm`. Default model: `gpt-4o-mini` |
+| `--llm-mode <mode>` | `fallback` (default) or `always` |
+| `--llm-max-requests <n>` | Stop model calls after n requests (`0` means no cap) |
+| `--llm-max-tokens <n>` | Stop model calls after n tokens (`0` means no cap) |
+| `--llm-allow-secrets` | Send a file even when it looks like it contains a key or token |
+| `--llm-cache-dir <path>` | Saved model replies (default: `.gnosis/llm-cache`) |
 
-Local scans are recursive under `<path>` (via `ignore::WalkBuilder`). Descent skips `.gitignore` matches, `target` / `node_modules` / `.git` / `knowledge.okf` / `.gnosis`, and does not follow symlinks.
+A file that fails is tried again with a longer wait between tries. After `--max-attempts` it stays **failed**, with the error recorded and secrets removed from the message.
 
-S3 scans list object keys under the bucket (or prefix), skip directory markers (`…/`), and skip keys whose path components match the same basename excludes (`target`, `node_modules`, `.git`, `knowledge.okf`, `.gnosis`).
+### While a scan is on screen
 
-Every discovered artifact is enqueued as a durable `analyze_object` job (function kind + JSON args + result/error). Async workers claim jobs from the store; the default backend is [redb](https://docs.rs/redb).
+Type `:` and one of: `summary`, `objects [status]`, `unknown`, `providers`, `stats`, `review`, `review accept <id>`, `jobs [status]`, `job <id>`, `find <text>`, `explain <name>`, `graph <name>`, `export okf [path]`, `quit`.
 
-A job that fails is retried automatically with exponential backoff: after attempt `n` it goes back to `pending` with `available_at = now + min(retry_max_ms, retry_base_ms * 2^(n-1))`, and no worker can claim it until then. It is only marked `failed` once `--max-attempts` is exhausted; the stored error keeps the attempt count.
+Shortcuts: `s` summary, `u` unknown, `e` export, `J` jobs, `q` quit.
 
-### LLM semantic extraction (optional)
+### Jobs
 
-Build with `--features llm`, then:
+Every scan has an id like `scan:…`. A rerun gets a new id like `rerun:…`. You can pass a unique prefix anywhere a full id is accepted.
 
 ```sh
-# Fallback: images / PDFs / unknown binaries (deterministic Full providers still win)
-gnosis scan ./repo --llm --no-tui
-gnosis scan ./repo --llm gpt-4o-mini --llm-mode fallback
-
-# Prefer Partial LLM over plaintext for leftover text/*; Full Tree-sitter still wins
-gnosis scan ./repo --llm claude-3-haiku-20240307 --llm-mode always
-
-# Local Ollama
-gnosis scan ./repo --llm tinyllama:latest --no-tui
+gnosis jobs scans
+gnosis jobs list
+gnosis jobs list --status failed
+gnosis jobs list --scan-id scan:…
+gnosis jobs show <id-or-prefix>
+gnosis jobs purge 5d
+gnosis jobs purge 12h --dry-run
+gnosis jobs purge --scan-id scan:…
+gnosis jobs pause --scan-id scan:…
+gnosis jobs unpause --scan-id scan:…
+gnosis jobs stop --scan-id scan:…
+gnosis jobs rerun --scan-id scan:…
+gnosis jobs rerun <id>,<id> --no-run
 ```
 
-The model id selects an adapter: OpenAI (`gpt-…`, `OPENAI_API_KEY`), Anthropic (`claude-…`, `ANTHROPIC_API_KEY`), Gemini (`gemini-…`, `GEMINI_API_KEY`), or Ollama (anything else, including `tinyllama:latest`; no key). Prefix the id with `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one. A scan without `--llm` never calls a model. Full Tree-sitter, Markdown, and data providers still win over the LLM.
+`purge` deletes queue rows. It does not delete `.gnosis/knowledge.redb` or an accepted review.
 
-Prompt packs are chosen per object (`code`, `code_review`, `docs`, `data`, `image`, `ocr`, `generic`).
+### Model-assisted reading
 
-Every LLM entity and relationship is stamped `origin=llm`, the model id, the prompt kind, a prompt version, and `review=pending`. Pending claims stay in the OKF bundle. Accept one after export:
+Install with `--features llm`, then pass `--llm`. A scan without `--llm` never calls a model.
+
+```sh
+gnosis scan . --llm --no-tui
+gnosis scan . --llm gpt-4o-mini --llm-mode fallback
+gnosis scan . --llm claude-haiku-4-5-20251001 --llm-mode always
+gnosis scan . --llm tinyllama:latest --no-tui
+```
+
+`fallback` asks the model about images, PDFs, and files no built-in reader claims. `always` also asks about leftover text, and the built-in code, Markdown, and data readers still win when they understand the file.
+
+The model name selects the service: OpenAI (`gpt-…`, `OPENAI_API_KEY`), Anthropic (`claude-…`, `ANTHROPIC_API_KEY`), Gemini (`gemini-…`, `GEMINI_API_KEY`), or Ollama for anything else, including `tinyllama:latest`. Prefix the name with `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
+
+A model claim is stored as an inference with `review=pending`. It stays in the bundle until you accept it:
 
 ```sh
 gnosis review list
 gnosis review accept ent:module:auth@src/lib.rs
 ```
 
-During a TUI scan the same commands are `:review` and `:review accept <id>`. Accepted marks in the live scan are in memory only; `gnosis review accept` edits the exported bundle.
+The same commands in the live UI are `:review` and `:review accept <id>`. An accepted mark is saved in `.gnosis/knowledge.redb`. If `knowledge.okf/` is present, the mark is updated there too.
 
-Repeat scans reuse `.gnosis/llm-cache` when the content fingerprint, model, prompt kind, and prompt version match. That skips the model call. It does not skip visiting the file.
+Identical file contents, model, and prompt reuse `.gnosis/llm-cache` and skip the network call. The file is still part of the scan. `--llm-max-requests` and `--llm-max-tokens` stop further calls and record those files as partial with reason `llm budget exhausted`. A file that looks like a private key, an AWS access key, or an API token is withheld unless you pass `--llm-allow-secrets`.
+
+### What Gnosis reads today
+
+- **Code:** C++, Rust, and Elixir. Modules, types, functions, imports, includes, and inheritance where the syntax shows it
+- **Documents:** Markdown and plain text
+- **Data:** JSON, YAML, TOML, and CSV, up to `--max-size`
+- **Model (optional):** images, OCR, and files the readers above leave as unknown or partial
+- **Everything else:** kept in the inventory as unknown or partial, with the path and a guess at the file type
+
+## Incremental compilation
+
+Gnosis has incremental compilation. The first scan of a folder reads every file and saves what it learned. The next scan loads that save and leaves a file alone when all of these are the same as last time:
+
+- the file's path inside the folder
+- the file's contents
+- which reader handled it
+- that reader's version
+
+You see this as `skipped N unchanged`. Those files keep their entities, relationships, and accepted review marks.
+
+Gnosis avoids rereading a local file when the size and modification time are unchanged. If the time changed and the contents did not, it updates the saved time and still skips analysis. For S3, a matching size and ETag skips the download.
+
+A file is analyzed again when it is new, its contents changed, or the reader that should handle it changed (including a newer version of that reader). A deleted file is removed from the saved inventory, along with the entities and relationships that came from it. A rename is saved as a removal of the old path and an addition of the new one, so an accepted review mark stays on the old path.
+
+When a changed or deleted file is named by another file's `#include` or `import`, that other file is analyzed again too. The match is a path suffix: `a.h` matches `src/a.h`. Gnosis does not search header directories. A reader-version change on a header does not, by itself, pull in the files that include it.
+
+Turn incremental compilation off for one scan:
 
 ```sh
-gnosis scan ./repo --llm tinyllama:latest --llm-max-requests 20 --llm-max-tokens 100000
+gnosis scan . --reanalyze --no-tui
 ```
 
-`0` on either cap means unlimited. Hitting a cap records the object as partial with reason `llm budget exhausted` and continues the scan. Objects that look like a private key, an AWS access key, or an API token are not sent unless you pass `--llm-allow-secrets`. Token totals in the TUI depend on the provider; Ollama often reports 0.
+`--reanalyze` still writes the new result back to the knowledge file. Point `--knowledge-db` at another file when you want a separate memory, for example a throwaway run in CI.
 
-### Jobs CLI
-
-Each scan assigns a `scan:…` id; every job is linked to it. Reruns create a fresh `rerun:…` id.
+Compare the last two completed scans without analyzing anything:
 
 ```sh
-gnosis jobs scans                    # list scan ids + counts
-gnosis jobs list
-gnosis jobs list --status failed
-gnosis jobs list --scan-id scan:…    # filter by scan (unique prefix ok)
-gnosis jobs list --status completed --limit 20
-gnosis jobs show job:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-gnosis jobs show <short-id-prefix>   # unique prefix also works
-gnosis jobs purge 5d                 # delete jobs older than 5 days
-gnosis jobs purge 12h --dry-run      # preview only
-gnosis jobs purge --scan-id scan:…   # delete every job in a scan
-gnosis jobs purge 5d --scan-id scan:…  # age filter within a scan
-gnosis jobs pause --scan-id scan:…     # pause pending/running in a scan
-gnosis jobs pause abc123de,def456
-gnosis jobs unpause --scan-id scan:…
-gnosis jobs stop --scan-id scan:…      # cancel pending/paused/running
-gnosis jobs rerun job:aaa,job:bbb    # requeue + re-execute
-gnosis jobs rerun --scan-id scan:…   # requeue + re-execute whole scan
-gnosis jobs rerun abc123de,def456 --no-run
+gnosis diff
+gnosis diff snap:abc snap:def
 ```
 
-### TUI commands (`:`)
+The report lists added and removed files, status changes, and entity and relationship ids that appeared or disappeared.
 
-`summary` · `objects [status]` · `unknown` · `providers` · `stats` · `review` · `review accept <id>` · `jobs [status]` · `job <id>` · `find <text>` · `explain <name>` · `graph <name>` · `export okf [path]` · `quit`
+On a local folder, `gnosis watch` scans, waits until changes have been quiet (default 400 ms, `--debounce-ms`), and scans again. It ignores writes under `.gnosis` and `knowledge.okf`, so saving the database or the export does not start another scan. Watch is for a folder on disk. An `s3://` path is rejected.
 
-Shortcuts: `s` summary · `u` unknown · `e` export · `J` jobs · `q` quit
+```sh
+gnosis watch .
+gnosis watch ./src --debounce-ms 800
+```
 
-## What you get
+## Adding Gnosis in your CI/CD
 
-1. A live (or printed) inventory of what was **understood**, **partial**, **unknown**, or **failed**
-2. Extracted entities and relationships (functions, classes, modules, documents, CSV columns, …)
-3. Optional **OKF bundle** (`knowledge.okf/` by default) — markdown + YAML you can browse, commit, or feed to other tools
+Run a headless scan on every push. Cache `.gnosis/knowledge.redb` so the job analyzes the files that changed since the previous successful run. The cache key changes every commit, and `restore-keys` loads the newest earlier save.
 
-## Good fit today
+```yaml
+name: knowledge
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Gnosis
+        run: curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
+      - name: Restore the last analysis
+        uses: actions/cache@v4
+        with:
+          path: .gnosis/knowledge.redb
+          key: gnosis-knowledge-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gnosis-knowledge-${{ runner.os }}-
+      - name: Scan
+        run: gnosis scan . --no-tui --quiet --export
+      - uses: actions/upload-artifact@v4
+        with:
+          name: knowledge
+          path: knowledge.okf
+```
 
-- Point at an unfamiliar local Git/repo tree and see structure emerge
-- Scan an S3 bucket the same way (keys as file paths) from a laptop or CI
-- Demo / PoC of “compile tree → structured knowledge”
-- Export a portable knowledge directory for humans or agents
+The scan step prints `analyzed N, skipped M unchanged` and a summary. It exits non-zero when the scan itself fails. Unknown files are listed in the summary. They do not fail the job.
 
-Not for yet: remote Git hosts, web crawl, office docs as first-class parsers, vectors/RAG, or chat (see [Limitations](#limitations)).
+Pass `--reanalyze` on a scheduled job when you want a full read, for example after upgrading Gnosis. Leave `.gnosis/jobs.redb` out of the cache. That file is the queue for one run. `gnosis watch` stays on a workstation. CI runs one scan and exits.
 
-## Library usage
+The same command fits any system that can install a binary and cache one file:
 
-One crate provides both the CLI and the library. Depend on it as:
+```sh
+gnosis scan . --no-tui --quiet --export --knowledge-db "$CACHE_DIR/knowledge.redb"
+```
+
+## Developing with Gnosis
+
+Gnosis is also a library. Your application can scan a folder, read the in-memory inventory, and write the same Markdown bundle the CLI writes. `Pipeline::new` opens `.gnosis/jobs.redb` and `.gnosis/knowledge.redb` in the process working directory. Set `ScanConfig.knowledge_db_path` and `job_db_path` when those files should live somewhere else.
+
+There is no published Python or Elixir package. The tutorials below build a small native extension that calls the library. Shelling out to the `gnosis` binary is the smaller integration when you only need a scan and a bundle on disk.
+
+### From Rust
 
 ```toml
 [dependencies]
-gnosis = "0.1"
+gnosis = "0.3"
 ```
-
-Public modules include pipeline/store/query APIs plus `providers`, `okf`, and `tui` for embedding.
-
-Headless scan + export sketch:
 
 ```rust
 use gnosis::{
@@ -244,7 +323,7 @@ use gnosis::{
 };
 
 fn main() -> Result<()> {
-    let config = ScanConfig::with_root("./my-repo");
+    let config = ScanConfig::with_root("./my-project");
     let pipeline = Pipeline::new(config.clone(), default_registry())?;
     let mut handle = pipeline.spawn();
     let events = handle.take_events();
@@ -263,66 +342,271 @@ fn main() -> Result<()> {
 }
 ```
 
-Typical flow: `default_registry()` → `Pipeline::spawn` → observe `PipelineEvent`s / query `KnowledgeStore` → `OkfExporter::export`.
+`default_registry()` is the set of built-in readers. `Pipeline::spawn` runs the scan on a background thread and sends `PipelineEvent`s for progress. `KnowledgeStore` is the inventory the summary and the exporter read. A second `Pipeline::new` against the same `knowledge_db_path` loads the previous analysis and skips unchanged files, the same way the CLI does.
 
-## Architecture
+API reference: [docs.rs/gnosis](https://docs.rs/gnosis).
 
-```text
-gnosis (one crate)
-├── binary: gnosis
-└── library modules:
-    ├── connectors, pipeline, store, query
-    ├── providers (tree-sitter + docs/data + generic [+ optional llm])
-    ├── prompts (LLM prompt packs by content kind)
-    ├── okf (export)
-    └── tui (Ratatui UI)
+### From Python
+
+This tutorial builds a native module with [PyO3](https://pyo3.rs/) 0.29 and [maturin](https://www.maturin.rs/). The scan detaches from the Python runtime while it runs, so the rest of the process can keep working.
+
+Create a crate named `gnosis_py`:
+
+```toml
+[package]
+name = "gnosis_py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "gnosis_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+gnosis = "0.3"
+pyo3 = { version = "0.29", features = ["extension-module"] }
 ```
 
-Pipeline: Connector → Discovery → **Job queue** (`analyze_object`) → ProtoData → Provider selection → Analysis → Knowledge store → Query / OKF export.
+`src/lib.rs`:
 
-Events flow over a bounded channel so the TUI observes progress without coupling to workers.
+```rust
+use gnosis::{default_registry, Pipeline, PipelineEvent, QueryEngine, ScanConfig};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 
-## What the PoC understands
+fn scan_path(path: String) -> Result<String, String> {
+    let config = ScanConfig::with_root(path);
+    let pipeline = Pipeline::new(config, default_registry()).map_err(|e| e.to_string())?;
+    let mut handle = pipeline.spawn();
+    let events = handle.take_events();
+    while let Ok(event) = events.recv() {
+        if matches!(event, PipelineEvent::ScanCompleted { .. }) {
+            break;
+        }
+    }
+    handle.wait().map_err(|e| e.to_string())?;
+    let store = handle.store.lock().map_err(|e| e.to_string())?;
+    Ok(QueryEngine::new(&store).summary())
+}
 
-- **Code:** C++, Rust, Elixir via Tree-sitter (modules, types, functions, imports/includes, inheritance where syntactic)
-- **Docs:** Markdown, plain text
-- **Data:** JSON, YAML, TOML, CSV (bounded)
-- **LLM (optional `--features llm`):** prompt packs for code, code review, docs, data, image analysis, OCR, and generic objects — emits inferred entities/relationships when `--llm` is set
-- **Everything else:** honest unknown / partial with metadata and a candidate future provider category
+#[pymodule]
+mod gnosis_py {
+    use super::*;
 
-## Limitations
+    #[pyfunction]
+    fn scan(py: Python<'_>, path: String) -> PyResult<String> {
+        py.detach(|| scan_path(path)).map_err(PyRuntimeError::new_err)
+    }
+}
+```
 
-- Connectors today: local filesystem and S3 (no remote Git hosts, web crawl)
-- LLM provider is opt-in (`--features llm` + `--llm`). LLM claims are inferences (`origin=llm`, `review=pending`) and never replace a Full deterministic provider. No vectors or persistent semantic index
-- Tree-sitter is syntactic — not compiler-grade semantics
-- Git enrichment uses the `git` CLI when available (filesystem scans only; not a pure-Rust Git library)
-- OKF export is a hand-written markdown+YAML bundle plus `sidecar.json` (not the `okf` crates.io crate)
-- No `gnosis.toml` yet — configuration is CLI flags only
+Build and call it:
 
-## Development
+```sh
+pip install maturin
+maturin develop
+```
+
+```python
+import gnosis_py
+
+print(gnosis_py.scan("/path/to/project"))
+```
+
+The summary is the same text the CLI prints. Analysis is saved in `.gnosis/knowledge.redb` under the process working directory, so a second `scan` of an unchanged project skips those files. Call `scan` from a worker thread when you need the caller to stay responsive. The function returns after the scan finishes.
+
+### From Elixir
+
+This tutorial builds a NIF with [Rustler](https://hexdocs.pm/rustler) 0.36. The scan is marked `DirtyCpu` so a long folder runs on a dirty scheduler and leaves the normal BEAM schedulers free.
+
+In `mix.exs`:
+
+```elixir
+defp deps do
+  [{:rustler, "~> 0.36", runtime: false}]
+end
+```
+
+`lib/my_app/gnosis.ex`:
+
+```elixir
+defmodule MyApp.Gnosis do
+  use Rustler, otp_app: :my_app, crate: :gnosis_nif
+
+  def scan(_path), do: :erlang.nif_error(:nif_not_loaded)
+end
+```
+
+`native/gnosis_nif/Cargo.toml`:
+
+```toml
+[package]
+name = "gnosis_nif"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "gnosis_nif"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+gnosis = "0.3"
+rustler = "0.36"
+```
+
+`native/gnosis_nif/src/lib.rs`:
+
+```rust
+use gnosis::{default_registry, Pipeline, PipelineEvent, QueryEngine, ScanConfig};
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn scan(path: String) -> Result<String, String> {
+    let config = ScanConfig::with_root(path);
+    let pipeline = Pipeline::new(config, default_registry()).map_err(|e| e.to_string())?;
+    let mut handle = pipeline.spawn();
+    let events = handle.take_events();
+    while let Ok(event) = events.recv() {
+        if matches!(event, PipelineEvent::ScanCompleted { .. }) {
+            break;
+        }
+    }
+    handle.wait().map_err(|e| e.to_string())?;
+    let store = handle.store.lock().map_err(|e| e.to_string())?;
+    Ok(QueryEngine::new(&store).summary())
+}
+
+rustler::init!("Elixir.MyApp.Gnosis", [scan]);
+```
+
+```elixir
+MyApp.Gnosis.scan("/path/to/project")
+```
+
+`scan/1` returns the summary string. The knowledge file is `.gnosis/knowledge.redb` in the BEAM working directory, which is the Mix project directory when you run `iex -S mix`. Call `scan/1` from a `Task` when the caller should keep processing messages. Rustler loads the NIF on the first call. Until `mix compile` has produced it, the function returns `:nif_not_loaded`.
+
+## Contributing to Gnosis
+
+### Build and test
+
+Requirements: Rust **1.85** or newer. `git` on `PATH` lets filesystem scans attach branch and commit metadata. Model tests that talk to a live service are ignored. The default test run stays offline.
 
 ```bash
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --all -- --check
-cargo deny check
-cargo run -- scan ./fixtures/mixed-repo --no-tui
+git clone https://github.com/SinAnima/gnosis.git
+cd gnosis
+cargo build --release
+./target/release/gnosis scan ./fixtures/mixed-repo
 ```
 
-### CI/CD
+Headless scan of the fixture, the same shape CI uses:
+
+```bash
+cargo run -- scan ./fixtures/mixed-repo --no-tui --export
+```
+
+`scripts/ci.sh` is the local copy of GitHub Actions: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, `cargo audit` when it is installed, and a release build that runs `gnosis about`.
+
+```bash
+./scripts/ci.sh
+```
+
+Individual checks:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets
+cargo llvm-cov --all-features --fail-under-lines 80
+cargo deny check
+cargo audit
+```
+
+`scripts/install.sh` downloads a release binary for users. It is not how you build from this checkout.
+
+`fixtures/mixed-repo` is the demo tree used by the end-to-end tests. `cargo test -- --ignored` is the live model recorder. It writes under `fixtures/llm/recorded/` and is not part of CI.
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/ci.sh` | Run the same checks as `.github/workflows/ci.yml` |
+| `scripts/install.sh` | Install a released binary into `~/.local/bin` |
+
+### Layout
+
+| Path | Role |
+|------|------|
+| `src/lib.rs` | Library API |
+| `src/main.rs` | `gnosis` binary |
+| `src/connectors/` | Folder walk and S3 listing |
+| `src/pipeline.rs` | Discovery, job queue, analysis |
+| `src/knowledge_db.rs` | Saved analysis, skip decision, snapshots |
+| `src/providers/` | Readers for code, documents, data, and the optional model |
+| `src/okf/` | Markdown bundle |
+| `src/tui/` | Terminal UI |
+| `src/watch.rs` | Debounced folder watch |
+| `tests/` | Integration tests |
+| `fixtures/mixed-repo/` | Demo tree |
+
+### Architecture
+
+One crate builds the binary and the library.
+
+```text
+folder or S3
+    → discover files
+    → durable analyze_object jobs (.gnosis/jobs.redb)
+    → pick a reader
+    → entities and relationships
+    → in-memory inventory, saved to .gnosis/knowledge.redb
+    → summary, TUI, gnosis diff, knowledge.okf/
+```
+
+Discovery and analysis are separated so a crashed scan can resume from the job queue, and so the terminal UI can follow progress on a channel without sharing worker code. The in-memory inventory is what queries and export read. The knowledge file is the copy that makes the next scan incremental. Each finished file is written as soon as its job finishes, so a crash keeps the files already completed.
+
+A reader claims a file as full, partial, or none. A full claim wins over a partial one. The optional model reader is partial, so a code, Markdown, or data reader that fully understands a file keeps that result.
+
+### Tech stack
+
+| Library | What it does here | Why this one |
+|---------|-------------------|--------------|
+| tree-sitter | Structure of C++, Rust, and Elixir | A grammar yields functions, types, and imports without running each language's compiler |
+| redb | Job queue and knowledge file | An embedded database is one file, with no server to operate. Jobs and knowledge are separate files, so purging the queue cannot delete what was learned |
+| blake3 | Content fingerprint | A fast, stable hash answers "did these bytes change?" |
+| ignore | Folder walk | The same skip rules people already have in `.gitignore` |
+| notify | `gnosis watch` | Operating-system file events, debounced into one scan |
+| clap | Command line | Typed flags and subcommands |
+| ratatui, crossterm | Terminal UI | A live view in the terminal, with no GUI toolkit |
+| tokio, aws-sdk-s3 | Job workers and S3 | Listing and downloads are async. Workers already run on that runtime. The SDK uses the default AWS credential chain |
+| serde, JSON, YAML, TOML, CSV | Data files and saved rows | The formats people already store, plus a single encoding for a knowledge row |
+| pulldown-cmark | Markdown | Headings and structure from documents |
+| genai | Optional model calls | One interface for OpenAI, Anthropic, Gemini, and Ollama. A normal build leaves this dependency out |
+| crossbeam-channel | Progress events | The UI and a headless script share one stream of scan events |
+| uuid | Scan and job ids | Ids you can pass back to `gnosis jobs` and `gnosis diff` |
+
+### This repository's automation
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| [ci.yml](.github/workflows/ci.yml) | push/PR to `main` | fmt, clippy, test (Linux/macOS/Windows), coverage → Coveralls, audit/deny, release build, crates.io package check |
-| [release.yml](.github/workflows/release.yml) | `v*` tag | multi-platform binaries, GitHub Release, publish crates to crates.io |
-| [dependencies.yml](.github/workflows/dependencies.yml) | weekly / manual | dependency update PRs |
+| [ci.yml](.github/workflows/ci.yml) | push and pull request to `main` | fmt, clippy, tests on Linux, macOS, and Windows, coverage, audit, deny, release build, package check |
+| [release.yml](.github/workflows/release.yml) | `v*` tag | Binaries, GitHub Release, crates.io publish |
+| [dependencies.yml](.github/workflows/dependencies.yml) | weekly or manual | Dependency update pull requests |
 
-Secrets / external setup:
+Packaging formulas under [`packaging/`](packaging/) are generated with [sastri](https://crates.io/crates/sastri) (`sastri generate --force`). `Sastri.toml` keeps `ci` and `github_releases` off, so those workflows stay owned by this repo.
 
-- Enable the repo on [Coveralls](https://coveralls.io) (action uses `GITHUB_TOKEN`)
-- Set `CARGO_REGISTRY_TOKEN` for crates.io publish on release tags
+Release setup: enable the repo on [Coveralls](https://coveralls.io), and set `CARGO_REGISTRY_TOKEN` for crates.io. The checklist is in [CONTRIBUTING.md](CONTRIBUTING.md#release-maintainers). Tag an annotated `v*` that matches `version` in `Cargo.toml`.
 
-Releases: see [CONTRIBUTING.md](CONTRIBUTING.md#release-maintainers). Push an annotated `v*` tag matching `version` in `Cargo.toml` (publishes the single `gnosis` crate).
+Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md) when the behavior a user sees has changed.
+
+## Limitations
+
+- Sources today are a local folder and S3. `gnosis watch` is a local folder
+- Include and import invalidation matches the included path as a suffix. A rename keeps an accepted review mark on the old path
+- Model reading is opt-in (`--features llm` and `--llm`). Model claims stay inferences until accepted. There is no vector index
+- Tree-sitter follows syntax. It is not a substitute for a compiler or type checker
+- Git metadata comes from the `git` command during folder scans
+- The Markdown bundle is written by Gnosis. It follows the shape of an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.1 bundle and adds `sidecar.json` for fields that frontmatter cannot carry
+- Configuration is command-line flags. There is no `gnosis.toml` yet
 
 ## Demo
 
@@ -330,11 +614,11 @@ See [demo.md](demo.md).
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, PR expectations, and the maintainer release checklist.
+Build, test, and release steps are in [Contributing to Gnosis](#contributing-to-gnosis). Review expectations for pull requests are also in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

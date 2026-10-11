@@ -2,6 +2,8 @@
 
 Thanks for helping improve Gnosis.
 
+How to build, what `scripts/ci.sh` runs, and why the libraries were chosen is in the README under [Contributing to Gnosis](README.md#contributing-to-gnosis).
+
 ## Development setup
 
 Requirements:

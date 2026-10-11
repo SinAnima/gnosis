@@ -20,6 +20,7 @@ fn sample_object(path: &str, status: UnderstandingStatus) -> StoredObject {
             modified: None,
             media_type: "text/plain".into(),
             extension: path.extension().map(|e| e.to_string_lossy().into_owned()),
+            etag: None,
         },
         proto: ProtoData {
             filename: path

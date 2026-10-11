@@ -14,6 +14,9 @@ pub struct ObjectDescriptor {
     pub modified: Option<SystemTime>,
     pub media_type: String,
     pub extension: Option<String>,
+    /// S3 ETag when the object was listed. Filesystem scans leave this empty.
+    #[serde(default)]
+    pub etag: Option<String>,
 }
 
 /// Context collected before content analysis.
@@ -68,6 +71,7 @@ impl ObjectDescriptor {
             modified,
             media_type,
             extension,
+            etag: None,
         }
     }
 }
