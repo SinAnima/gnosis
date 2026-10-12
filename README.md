@@ -13,6 +13,48 @@ Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation s
 
 <img width="600" alt="Gnosis scan in the terminal" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
 
+## Contents
+
+- [Install](#install)
+  - [Homebrew](#homebrew)
+  - [Scoop (Windows)](#scoop-windows)
+  - [mise](#mise)
+  - [asdf](#asdf)
+  - [install.sh](#installsh)
+  - [crates.io](#cratesio)
+- [Quick start](#quick-start)
+- [Using Gnosis](#using-gnosis)
+  - [Commands](#commands)
+  - [Scan options](#scan-options)
+    - [Every scan](#every-scan)
+    - [Terminal UI](#terminal-ui)
+    - [Web crawl options](#web-crawl-options)
+    - [Object store](#object-store)
+    - [Model](#model)
+  - [Jobs](#jobs)
+  - [Model-assisted reading](#model-assisted-reading)
+  - [What Gnosis reads today](#what-gnosis-reads-today)
+- [Incremental compilation](#incremental-compilation)
+- [Web crawl](#web-crawl)
+- [Adding Gnosis in your CI/CD](#adding-gnosis-in-your-cicd)
+- [Developing with Gnosis](#developing-with-gnosis)
+  - [From Rust](#from-rust)
+  - [From Python](#from-python)
+  - [From Elixir](#from-elixir)
+- [Contributing to Gnosis](#contributing-to-gnosis)
+  - [Build and test](#build-and-test)
+  - [Scripts](#scripts)
+  - [Layout](#layout)
+  - [Architecture](#architecture)
+  - [Tech stack](#tech-stack)
+  - [This repository's automation](#this-repositorys-automation)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [Demo](#demo)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Install
 
 Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. After each release, Homebrew and Scoop formulas take their checksums from that file.
@@ -138,41 +180,82 @@ Gnosis remembers the result in `.gnosis/knowledge.redb`, next to the directory w
 
 ### `scan` options
 
+Flags are grouped by the kind of scan they belong to.
+
+#### Every scan
+
+| Flag | Description |
+|------|-------------|
+| `--max-size <bytes>` | Largest file or page Gnosis will read (default: 2 MiB) |
+| `--concurrency <n>` | How many files to analyze at once |
+| `--knowledge-db <path>` | Saved analysis (default: `.gnosis/knowledge.redb`) |
+| `--reanalyze` | Read and analyze every object on this scan |
+| `--job-db <path>` | Job queue file (default: `.gnosis/jobs.redb`) |
+| `--max-attempts <n>` | Tries per object, including the first (default: 3). `1` turns retries off |
+| `--retry-base-ms <ms>` | First retry wait, doubled after each failure (default: 250) |
+| `--retry-max-ms <ms>` | Longest retry wait (default: 30000) |
+
+A file that fails is tried again with a longer wait between tries. After `--max-attempts` it stays **failed**, with the error recorded and secrets removed from the message.
+
+#### Terminal UI
+
 | Flag | Description |
 |------|-------------|
 | `--no-tui` | Print progress and a summary. Use this in scripts |
-| `--quiet` | Hide per-file lines. The summary is still printed |
+| `--quiet` | Hide per-object lines. The summary is still printed |
 | `--export` | Write the Markdown bundle when a headless scan finishes |
 | `--output <dir>` | Bundle directory (default: `knowledge.okf`) |
-| `--max-size <bytes>` | Largest file Gnosis will read (default: 2 MiB) |
-| `--concurrency <n>` | How many files to analyze at once |
-| `--region <name>` | AWS region for `s3://` scans |
-| `--max-pages <n>` | Pages to fetch on a web scan (default: 50) |
+
+With the live UI, type `:` and a command:
+
+| Command | What it does |
+|---------|----------------|
+| `summary` | Inventory counts. Shortcut: `s` |
+| `objects [status]` | List objects, optionally by status |
+| `unknown` | Objects still unknown or partial. Shortcut: `u` |
+| `providers` | Readers used on this scan |
+| `stats` | Scan counters, including crawl and model totals |
+| `review` | Model claims waiting for review |
+| `review accept <id>` | Accept one claim |
+| `jobs [status]` | Queue rows. Shortcut: `J` |
+| `job <id>` | One job |
+| `find <text>` | Search names |
+| `explain <name>` | Why an entity is in the inventory |
+| `graph <name>` | Nearby relationships |
+| `export okf [path]` | Write the Markdown bundle. Shortcut: `e` |
+| `quit` | Leave the UI. Shortcut: `q` |
+
+#### Web crawl options
+
+These flags apply to an `http://` or `https://` scan. A folder or `s3://` scan rejects them.
+
+| Flag | Description |
+|------|-------------|
+| `--max-pages <n>` | Pages to fetch (default: 50) |
 | `--max-depth <n>` | Links followed beyond the start page (default: 2) |
 | `--max-concurrency <n>` | Pages fetched at once (default: 4) |
 | `--request-delay-ms <ms>` | Wait between page fetches (default: 250) |
 | `--include-subdomains` | Also follow subdomains of the start host |
 | `--allow-private-network` | Allow loopback, private, and link-local addresses |
-| `--job-db <path>` | Job queue file (default: `.gnosis/jobs.redb`) |
-| `--knowledge-db <path>` | Saved analysis (default: `.gnosis/knowledge.redb`) |
-| `--reanalyze` | Read and analyze every file on this scan |
-| `--max-attempts <n>` | Tries per file, including the first (default: 3). `1` turns retries off |
-| `--retry-base-ms <ms>` | First retry wait, doubled after each failure (default: 250) |
-| `--retry-max-ms <ms>` | Longest retry wait (default: 30000) |
-| `--llm [MODEL]` | Also ask a model about files the built-in readers leave alone. Requires a binary installed with `--features llm`. Default model: `gpt-4o-mini` |
+
+#### Object store
+
+| Flag | Description |
+|------|-------------|
+| `--region <name>` | AWS region for an `s3://` scan. Otherwise the default credential chain |
+
+#### Model
+
+These flags apply when the binary was installed with `--features llm`. A scan without `--llm` never calls a model. See [Model-assisted reading](#model-assisted-reading).
+
+| Flag | Description |
+|------|-------------|
+| `--llm [MODEL]` | Ask a model about files the built-in readers leave alone. Default model: `gpt-4o-mini` |
 | `--llm-mode <mode>` | `fallback` (default) or `always` |
 | `--llm-max-requests <n>` | Stop model calls after n requests (`0` means no cap) |
 | `--llm-max-tokens <n>` | Stop model calls after n tokens (`0` means no cap) |
 | `--llm-allow-secrets` | Send a file even when it looks like it contains a key or token |
 | `--llm-cache-dir <path>` | Saved model replies (default: `.gnosis/llm-cache`) |
-
-A file that fails is tried again with a longer wait between tries. After `--max-attempts` it stays **failed**, with the error recorded and secrets removed from the message.
-
-### While a scan is on screen
-
-Type `:` and one of: `summary`, `objects [status]`, `unknown`, `providers`, `stats`, `review`, `review accept <id>`, `jobs [status]`, `job <id>`, `find <text>`, `explain <name>`, `graph <name>`, `export okf [path]`, `quit`.
-
-Shortcuts: `s` summary, `u` unknown, `e` export, `J` jobs, `q` quit.
 
 ### Jobs
 
@@ -224,11 +307,38 @@ Identical file contents, model, and prompt reuse `.gnosis/llm-cache` and skip th
 
 ### What Gnosis reads today
 
-- **Code:** C++, Rust, and Elixir. Modules, types, functions, imports, includes, and inheritance where the syntax shows it
-- **Documents:** Markdown, HTML, and plain text. CSS, JavaScript, images, and fonts are inventoried and not read as text
-- **Data:** JSON, YAML, TOML, and CSV, up to `--max-size`
-- **Model (optional):** images, OCR, and files the readers above leave as unknown or partial
-- **Everything else:** kept in the inventory as unknown or partial, with the path and a guess at the file type
+Gnosis scans three kinds of sources, and it only understands a fixed set of those objects. Anything else is kept in the inventory with a path and a file-type guess.
+
+**Where a scan looks**
+
+- A local folder, including Git metadata when `git` is available
+- An `s3://bucket[/prefix]` prefix
+- An `http://` or `https://` page, then the HTML links it follows, within the crawl limits
+
+Each object is capped by `--max-size` (2 MiB by default).
+
+**What a built-in reader understands**
+
+| Artifact | Extensions | What is extracted |
+|----------|------------|-------------------|
+| C and C++ | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx` | Modules, types, functions, includes, inheritance, from the syntax |
+| Rust | `.rs` | Modules, types, functions, and the relationships the syntax shows |
+| Elixir | `.ex`, `.exs` | Modules, functions, and the relationships the syntax shows |
+| Markdown | `.md`, `.markdown`, `.mdx` | Headings and document structure |
+| HTML | `.html`, `.htm`, or `text/html` | Title, headings, description, language, canonical link, and links. No JavaScript |
+| Plain text | `.txt`, `.text`, `.log` | A document plus a short preview. Other `text/*` files get a partial reading |
+| JSON | `.json` | Document structure and key paths |
+| YAML | `.yaml`, `.yml` | Document structure and key paths |
+| TOML | `.toml` | Document structure and key paths |
+| CSV and TSV | `.csv`, `.tsv` | A dataset and its columns |
+
+**Scanned, then left as unknown or partial**
+
+CSS, JavaScript, images, and fonts are recorded and not read as text. PDFs, other images, and binaries are inventoried with a guess such as `pdf-provider` or `image-provider`. They are not parsed.
+
+**Optional model**
+
+With a build that includes `--features llm` and a scan that passes `--llm`, the model can claim images, PDFs, and other objects the readers above leave alone. Those claims stay inferences until accepted. A normal build does not call a model.
 
 ## Incremental compilation
 
@@ -629,6 +739,22 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 - Git metadata comes from the `git` command during folder scans
 - The Markdown bundle is written by Gnosis. It follows the shape of an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.1 bundle and adds `sidecar.json` for fields that frontmatter cannot carry
 - Configuration is command-line flags. There is no `gnosis.toml` yet
+
+## Roadmap
+
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.0 are published.
+
+| Release | Theme | What it adds |
+|---------|--------|----------------|
+| 0.1.0 | Trust the scan | A repeatable scan of a local folder into a Markdown bundle |
+| 0.2.0 | Assisted understanding | Optional model reading that does not replace deterministic facts |
+| 0.3.0 | Recompile, do not rescan | A saved knowledge file, incremental scans, `gnosis diff`, and filesystem watch |
+| 0.4.0 | Web ingestion | A bounded `https://` crawl in the same pipeline |
+| 0.5.0 | Understand more | Deeper C++, Rust, and Elixir reading; documentation linked to code; evidence and confidence you can inspect; coverage by path, file type, and reader |
+| 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
+| 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
+| 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
+| 1.0.0 | Stable knowledge infrastructure | Supported schemas, upgrades, and an operating model teams can build on |
 
 ## Demo
 
