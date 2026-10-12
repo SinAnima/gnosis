@@ -81,7 +81,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.4.0
+mise use -g github:SinAnima/gnosis@0.4.1
 ```
 
 ### asdf
@@ -90,12 +90,12 @@ From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.4.0
+asdf install gnosis 0.4.1
 ```
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.4.0`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.4.1`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -742,7 +742,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.0 are published.
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published.
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|

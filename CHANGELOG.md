@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-12
+
+### Changed
+
+- **README** — a contents list, a roadmap, scan flags grouped by use case (every scan, terminal UI, web crawl, object store, and model), and a table of the artifacts a built-in reader understands.
+
 ## [0.4.0] - 2026-10-11
 
 ### Added
@@ -99,7 +105,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/SinAnima/gnosis/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SinAnima/gnosis/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SinAnima/gnosis/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SinAnima/gnosis/compare/v0.1.0...v0.2.0
