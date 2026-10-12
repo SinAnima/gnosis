@@ -290,7 +290,7 @@ gnosis scan . --llm claude-haiku-4-5-20251001 --llm-mode always
 gnosis scan . --llm tinyllama:latest --no-tui
 ```
 
-`fallback` asks the model about images, PDFs, and files no built-in reader claims. `always` also asks about leftover text, and the built-in code, Markdown, and data readers still win when they understand the file.
+`fallback` asks the model about images, PDFs, and files no built-in reader claims. `always` also asks about leftover text, and the built-in code, Markdown, data, and JPEG/TIFF readers still win when they understand the file.
 
 The model name selects the service: OpenAI (`gpt-…`, `OPENAI_API_KEY`), Anthropic (`claude-…`, `ANTHROPIC_API_KEY`), Gemini (`gemini-…`, `GEMINI_API_KEY`), or Ollama for anything else, including `tinyllama:latest`. Prefix the name with `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
 
@@ -331,10 +331,11 @@ Each object is capped by `--max-size` (2 MiB by default).
 | YAML | `.yaml`, `.yml` | Document structure and key paths |
 | TOML | `.toml` | Document structure and key paths |
 | CSV and TSV | `.csv`, `.tsv` | A dataset and its columns |
+| JPEG and TIFF | `.jpg`, `.jpeg`, `.tif`, `.tiff`, or `image/jpeg`, `image/tiff` | EXIF: camera make and model, the original date, orientation, exposure, and GPS when the file has them |
 
 **Scanned, then left as unknown or partial**
 
-CSS, JavaScript, images, and fonts are recorded and not read as text. PDFs, other images, and binaries are inventoried with a guess such as `pdf-provider` or `image-provider`. They are not parsed.
+CSS, JavaScript, and fonts are recorded and not read as text. PNG, GIF, SVG, and WebP stay in the inventory with a guess such as `image-provider`. PDFs and other binaries are inventoried the same way.
 
 **Optional model**
 
