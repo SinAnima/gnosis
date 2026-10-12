@@ -6,6 +6,7 @@ use crate::connectors::filesystem::{
 use crate::connectors::git::GitContext;
 use crate::connectors::s3::{parse_s3_uri, AwsS3Backend, S3Backend, S3Connector};
 use crate::connectors::types::{ObjectDescriptor, ProtoData};
+use crate::connectors::web::WebAcquirer;
 use crate::content::BytesContentReader;
 use crate::error::{GnosisError, Result};
 use crate::events::PipelineEvent;
@@ -36,6 +37,7 @@ pub struct Pipeline {
     cancel: Arc<AtomicBool>,
     job_store: Arc<dyn JobStore>,
     knowledge: Arc<KnowledgeDb>,
+    web_acquirer: Option<Arc<dyn crate::connectors::web::WebAcquirer>>,
 }
 
 pub struct PipelineHandle {
@@ -74,9 +76,11 @@ impl PipelineHandle {
 enum ObjectAccess {
     Filesystem,
     S3(Arc<S3Connector<AwsS3Backend>>),
+    Web(crate::connectors::web::BodyCache),
     /// Filesystem + optional S3 backend (for job reruns with mixed sources).
     Mixed {
         s3: Option<Arc<AwsS3Backend>>,
+        web: crate::connectors::web::BodyCache,
     },
 }
 
@@ -84,10 +88,13 @@ impl ObjectAccess {
     fn connector_name(&self, object: &ObjectDescriptor) -> &'static str {
         if path_looks_like_s3(&object.path) {
             "s3"
+        } else if path_looks_like_http(&object.path) {
+            "web"
         } else {
             match self {
                 Self::Filesystem | Self::Mixed { .. } => "filesystem",
                 Self::S3(_) => "s3",
+                Self::Web(_) => "web",
             }
         }
     }
@@ -96,13 +103,16 @@ impl ObjectAccess {
         match self {
             Self::Filesystem => read_object_bytes(&object.path, max_size),
             Self::S3(c) => c.read_object_bytes(object, max_size),
-            Self::Mixed { s3 } => {
+            Self::Web(cache) => read_web_bytes(cache, object, max_size),
+            Self::Mixed { s3, web } => {
                 if path_looks_like_s3(&object.path) {
                     let backend = s3.as_ref().ok_or_else(|| {
                         GnosisError::Job("s3 job requires AWS credentials / region".into())
                     })?;
                     let (bucket, key) = s3_bucket_and_key(&object.path)?;
                     backend.get_object(&bucket, &key, max_size)
+                } else if path_looks_like_http(&object.path) {
+                    read_web_bytes(web, object, max_size)
                 } else {
                     read_object_bytes(&object.path, max_size)
                 }
@@ -114,8 +124,9 @@ impl ObjectAccess {
         match self {
             Self::Filesystem => collect_neighbors(&object.path, limit),
             Self::S3(c) => c.collect_neighbors(object, limit),
+            Self::Web(_) => Vec::new(),
             Self::Mixed { .. } => {
-                if path_looks_like_s3(&object.path) {
+                if path_looks_like_s3(&object.path) || path_looks_like_http(&object.path) {
                     Vec::new()
                 } else {
                     collect_neighbors(&object.path, limit)
@@ -127,9 +138,9 @@ impl ObjectAccess {
     fn permissions(&self, object: &ObjectDescriptor) -> Option<String> {
         match self {
             Self::Filesystem => permissions_string(&object.path),
-            Self::S3(_) => None,
+            Self::S3(_) | Self::Web(_) => None,
             Self::Mixed { .. } => {
-                if path_looks_like_s3(&object.path) {
+                if path_looks_like_s3(&object.path) || path_looks_like_http(&object.path) {
                     None
                 } else {
                     permissions_string(&object.path)
@@ -137,6 +148,86 @@ impl ObjectAccess {
             }
         }
     }
+
+    fn page(&self, id: &str) -> Option<crate::connectors::web::PageBody> {
+        match self {
+            Self::Web(cache) => cache.get(id),
+            Self::Mixed { web, .. } => web.get(id),
+            Self::Filesystem | Self::S3(_) => None,
+        }
+    }
+}
+
+fn stored_web_validators(
+    knowledge: &Arc<crate::knowledge_db::KnowledgeDb>,
+) -> std::collections::HashMap<String, crate::connectors::web::StoredValidators> {
+    let Ok(records) = knowledge.load_all() else {
+        return std::collections::HashMap::new();
+    };
+    records
+        .into_iter()
+        .filter(|record| record.object.descriptor.id.as_str().starts_with("obj:web:"))
+        .map(|record| {
+            (
+                record.object.descriptor.id.as_str().to_string(),
+                crate::connectors::web::StoredValidators {
+                    etag: record.etag.clone(),
+                    last_modified: None,
+                    size: record.size,
+                    modified: record.modified_unix_ms.and_then(|ms| {
+                        std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_millis(ms))
+                    }),
+                    media_type: record.object.descriptor.media_type.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn record_crawl(
+    metrics: &crate::config::ScanMetrics,
+    summary: &crate::connectors::web::CrawlSummary,
+) {
+    metrics
+        .crawl_discovered
+        .store(summary.discovered, std::sync::atomic::Ordering::Relaxed);
+    metrics
+        .crawl_fetched
+        .store(summary.fetched, std::sync::atomic::Ordering::Relaxed);
+    metrics
+        .crawl_blocked
+        .store(summary.blocked, std::sync::atomic::Ordering::Relaxed);
+    metrics
+        .crawl_skipped
+        .store(summary.skipped, std::sync::atomic::Ordering::Relaxed);
+    metrics
+        .crawl_failed
+        .store(summary.failed, std::sync::atomic::Ordering::Relaxed);
+    metrics
+        .crawl_bytes
+        .store(summary.bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn path_looks_like_http(path: &std::path::Path) -> bool {
+    let text = path.to_string_lossy();
+    text.starts_with("http://") || text.starts_with("https://")
+}
+
+fn read_web_bytes(
+    cache: &crate::connectors::web::BodyCache,
+    object: &ObjectDescriptor,
+    max_size: u64,
+) -> Result<Vec<u8>> {
+    if let Some(page) = cache.get(object.id.as_str()) {
+        if page.bytes.len() as u64 > max_size {
+            return Err(GnosisError::Pipeline(format!(
+                "web object exceeds max size: {}",
+                object.path.display()
+            )));
+        }
+        return Ok(page.bytes);
+    }
+    crate::connectors::web::refetch_body(&object.path.to_string_lossy(), max_size)
 }
 
 fn path_looks_like_s3(path: &std::path::Path) -> bool {
@@ -263,7 +354,17 @@ impl Pipeline {
             cancel: Arc::new(AtomicBool::new(false)),
             job_store,
             knowledge,
+            web_acquirer: None,
         }
+    }
+
+    /// Use a test acquirer instead of the production crawler.
+    pub fn with_web_acquirer(
+        mut self,
+        acquirer: Arc<dyn crate::connectors::web::WebAcquirer>,
+    ) -> Self {
+        self.web_acquirer = Some(acquirer);
+        self
     }
 
     fn with_metrics(mut self, metrics: Arc<ScanMetrics>) -> Self {
@@ -356,6 +457,7 @@ impl Pipeline {
             } else {
                 None
             },
+            web: crate::connectors::web::BodyCache::new(),
         };
 
         let config = ScanConfig {
@@ -508,6 +610,45 @@ impl Pipeline {
                 };
                 (objects, ObjectAccess::S3(connector))
             }
+            ScanSource::Web { start_url, policy } => {
+                let cache = crate::connectors::web::BodyCache::new();
+                let known = if self.config.reanalyze {
+                    std::collections::HashMap::new()
+                } else {
+                    stored_web_validators(&self.knowledge)
+                };
+                let summary = if let Some(acquirer) = &self.web_acquirer {
+                    acquirer.crawl(start_url, policy, &cache, &known, &self.cancel)?
+                } else {
+                    let acquirer = crate::connectors::web::SpiderAcquirer;
+                    acquirer.crawl(start_url, policy, &cache, &known, &self.cancel)?
+                };
+                record_crawl(&self.metrics, &summary);
+                for outcome in &summary.outcomes {
+                    let _ = events.send(PipelineEvent::Warning {
+                        message: format!(
+                            "crawl {} {}: {}",
+                            outcome.kind.as_str(),
+                            outcome.url,
+                            outcome.detail
+                        ),
+                    });
+                }
+                {
+                    let mut store = self.store.lock().unwrap();
+                    for outcome in &summary.outcomes {
+                        store.record_acquisition(
+                            outcome.url.clone(),
+                            outcome.kind.as_str().to_string(),
+                            outcome.detail.clone(),
+                        );
+                    }
+                }
+                (
+                    summary.objects.into_iter().map(|o| o.descriptor).collect(),
+                    ObjectAccess::Web(cache),
+                )
+            }
         };
 
         self.metrics
@@ -631,9 +772,20 @@ impl Pipeline {
             .iter()
             .map(|object| object.id.as_str().to_string())
             .collect();
+        let web_scan = matches!(self.config.source, ScanSource::Web { .. });
         let stale: Vec<_> = stored
             .keys()
-            .filter(|id| !seen.contains(id.as_str()))
+            .filter(|id| {
+                if seen.contains(id.as_str()) {
+                    return false;
+                }
+                let web_id = id.starts_with("obj:web:");
+                if web_scan {
+                    web_id
+                } else {
+                    !web_id
+                }
+            })
             .cloned()
             .collect();
         let mut changed_paths = Vec::new();
@@ -933,6 +1085,7 @@ fn process_object(
 
     let bytes = access.read_bytes(object, config.max_object_size)?;
     let fingerprint = fingerprint_bytes(&bytes);
+    let page = access.page(object.id.as_str());
 
     let proto = ProtoData {
         connector: access.connector_name(object).into(),
@@ -957,6 +1110,9 @@ fn process_object(
         } else {
             None
         },
+        http_status: page.as_ref().map(|p| p.status),
+        requested_url: page.as_ref().map(|p| p.requested_url.clone()),
+        final_url: page.as_ref().map(|p| p.final_url.clone()),
     };
 
     let (provider, support) = match providers.select(object, &proto) {

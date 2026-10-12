@@ -91,13 +91,23 @@ pub fn classify_object(input: &ClassifyInput) -> Classify {
     {
         return Classify::Analyze(ReanalyzeReason::Provider);
     }
-    if input.is_s3 {
-        if let (Some(stored), Some(live)) = (&input.stored_etag, &input.etag) {
-            if stored == live && input.stored_size == input.size {
-                return Classify::Keep { touch_stat: false };
-            }
-        }
-    } else if input.stored_size == input.size
+    let etags_match = matches!(
+        (&input.stored_etag, &input.etag),
+        (Some(stored), Some(live)) if stored == live
+    );
+    let etags_differ = matches!(
+        (&input.stored_etag, &input.etag),
+        (Some(stored), Some(live)) if stored != live
+    );
+    if etags_match
+        && input.stored_size == input.size
+        && (input.is_s3 || input.stored_modified_unix_ms == input.modified_unix_ms)
+    {
+        return Classify::Keep { touch_stat: false };
+    }
+    if !input.is_s3
+        && !etags_differ
+        && input.stored_size == input.size
         && input.stored_modified_unix_ms.is_some()
         && input.stored_modified_unix_ms == input.modified_unix_ms
     {

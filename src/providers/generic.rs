@@ -53,12 +53,14 @@ impl UnderstandingProvider for GenericMetadataProvider {
             Confidence::Low,
         );
 
-        let status =
-            if object.media_type == "application/octet-stream" || object.extension.is_none() {
-                UnderstandingStatus::Unknown
-            } else {
-                UnderstandingStatus::PartiallyUnderstood
-            };
+        let status = if object.media_type == "application/octet-stream"
+            || object.extension.is_none()
+            || is_unparsed_asset(object)
+        {
+            UnderstandingStatus::Unknown
+        } else {
+            UnderstandingStatus::PartiallyUnderstood
+        };
 
         Ok(AnalysisResult {
             record: KnowledgeRecord {
@@ -71,6 +73,33 @@ impl UnderstandingProvider for GenericMetadataProvider {
             status,
             classification_reason: Some(reason),
         })
+    }
+}
+
+fn is_unparsed_asset(object: &ObjectDescriptor) -> bool {
+    matches!(
+        object.extension.as_deref(),
+        Some(
+            "css"
+                | "js"
+                | "mjs"
+                | "svg"
+                | "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "webp"
+                | "woff"
+                | "woff2"
+                | "ico"
+        )
+    ) || {
+        let media = object.media_type.split(';').next().unwrap_or("").trim();
+        media.eq_ignore_ascii_case("text/css")
+            || media.eq_ignore_ascii_case("text/javascript")
+            || media.eq_ignore_ascii_case("application/javascript")
+            || media.starts_with("image/")
+            || media.starts_with("font/")
     }
 }
 

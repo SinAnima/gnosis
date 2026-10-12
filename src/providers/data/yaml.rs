@@ -35,8 +35,24 @@ impl UnderstandingProvider for YamlProvider {
         let path = &object.relative_path;
         let mut diagnostics = Vec::new();
 
-        let value: serde_yaml::Value = match serde_yaml::from_slice(&buf) {
-            Ok(v) => v,
+        let text = match std::str::from_utf8(&buf) {
+            Ok(text) => text,
+            Err(e) => {
+                diagnostics.push(Diagnostic {
+                    severity: DiagnosticSeverity::Error,
+                    message: format!("yaml parse error: {e}"),
+                });
+                return Ok(failed_doc(object, &provider, "yaml", diagnostics));
+            }
+        };
+        let value = match yaml_rust2::YamlLoader::load_from_str(text) {
+            Ok(mut docs) => {
+                if docs.is_empty() {
+                    yaml_rust2::Yaml::Null
+                } else {
+                    docs.remove(0)
+                }
+            }
             Err(e) => {
                 diagnostics.push(Diagnostic {
                     severity: DiagnosticSeverity::Error,
@@ -55,7 +71,7 @@ impl UnderstandingProvider for YamlProvider {
             .unwrap_or_else(|| "yaml".into());
 
         let mut attr = attrs(&[("format", "yaml"), ("key_count", &keys.len().to_string())]);
-        if let serde_yaml::Value::Mapping(map) = &value {
+        if let yaml_rust2::Yaml::Hash(map) = &value {
             let top: Vec<String> = map
                 .keys()
                 .filter_map(|k| k.as_str().map(|s| s.to_string()))
@@ -101,12 +117,12 @@ impl UnderstandingProvider for YamlProvider {
     }
 }
 
-fn collect_yaml_keys(value: &serde_yaml::Value, prefix: &str, depth: usize, out: &mut Vec<String>) {
+fn collect_yaml_keys(value: &yaml_rust2::Yaml, prefix: &str, depth: usize, out: &mut Vec<String>) {
     if depth > MAX_DEPTH || out.len() >= MAX_KEYS {
         return;
     }
     match value {
-        serde_yaml::Value::Mapping(map) => {
+        yaml_rust2::Yaml::Hash(map) => {
             for (k, v) in map {
                 let key = k.as_str().unwrap_or("?").to_string();
                 let path = if prefix.is_empty() {
@@ -118,7 +134,7 @@ fn collect_yaml_keys(value: &serde_yaml::Value, prefix: &str, depth: usize, out:
                 collect_yaml_keys(v, &path, depth + 1, out);
             }
         }
-        serde_yaml::Value::Sequence(seq) => {
+        yaml_rust2::Yaml::Array(seq) => {
             if let Some(first) = seq.first() {
                 let path = format!("{prefix}[]");
                 out.push(path.clone());

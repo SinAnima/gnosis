@@ -6,13 +6,42 @@ use crate::{
 
 pub struct PlainTextProvider;
 
+fn is_web_asset(media: &str, extension: Option<&str>) -> bool {
+    if matches!(
+        extension,
+        Some(
+            "css"
+                | "js"
+                | "mjs"
+                | "svg"
+                | "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "webp"
+                | "woff"
+                | "woff2"
+        )
+    ) {
+        return true;
+    }
+    let media = media.split(';').next().unwrap_or(media).trim();
+    media.eq_ignore_ascii_case("text/css")
+        || media.eq_ignore_ascii_case("text/javascript")
+        || media.eq_ignore_ascii_case("application/javascript")
+        || media.starts_with("image/")
+        || media.starts_with("font/")
+}
+
 impl UnderstandingProvider for PlainTextProvider {
     fn id(&self) -> ProviderId {
         ProviderId::new("plaintext")
     }
 
     fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
-        if ext_is(&object.extension, &["txt", "text", "log"]) {
+        if is_web_asset(&object.media_type, object.extension.as_deref()) {
+            Support::None
+        } else if ext_is(&object.extension, &["txt", "text", "log"]) {
             Support::Full
         } else if object.media_type.starts_with("text/")
             && !ext_is(

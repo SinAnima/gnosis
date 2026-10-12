@@ -9,7 +9,7 @@
 
 **Gnosis compiles what you have into what you know.**
 
-Point Gnosis at a project folder or an S3 bucket. It reads the files there — source code, Markdown, and data files such as JSON, YAML, TOML, and CSV — and writes down the structure it can see: modules, functions, types, imports, headings, and columns. Watch that happen in the terminal, or run it from a script and keep the result as a folder of Markdown. The next run reads again only the files that changed.
+Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation site. It reads the files and pages there — source code, Markdown, HTML, and data files such as JSON, YAML, TOML, and CSV — and writes down the structure it can see: modules, functions, types, imports, headings, links, and columns. Watch that happen in the terminal, or run it from a script and keep the result as a folder of Markdown. The next run reads again only the files and pages that changed.
 
 <img width="600" alt="Gnosis scan in the terminal" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
 
@@ -39,7 +39,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.3.0
+mise use -g github:SinAnima/gnosis@0.4.0
 ```
 
 ### asdf
@@ -48,12 +48,12 @@ From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.3.0
+asdf install gnosis 0.4.0
 ```
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.3.0`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.4.0`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -125,6 +125,7 @@ Gnosis remembers the result in `.gnosis/knowledge.redb`, next to the directory w
 | Command | What it does |
 |---------|----------------|
 | `gnosis scan <path>` | Scan a folder and show the live UI |
+| `gnosis scan https://host/docs` | Crawl a site and show the live UI |
 | `gnosis scan s3://bucket[/prefix]` | Scan a bucket |
 | `gnosis scan <target> --no-tui` | Scan and print a summary |
 | `gnosis scan <target> --no-tui --export` | Also write `knowledge.okf/` |
@@ -146,6 +147,12 @@ Gnosis remembers the result in `.gnosis/knowledge.redb`, next to the directory w
 | `--max-size <bytes>` | Largest file Gnosis will read (default: 2 MiB) |
 | `--concurrency <n>` | How many files to analyze at once |
 | `--region <name>` | AWS region for `s3://` scans |
+| `--max-pages <n>` | Pages to fetch on a web scan (default: 50) |
+| `--max-depth <n>` | Links followed beyond the start page (default: 2) |
+| `--max-concurrency <n>` | Pages fetched at once (default: 4) |
+| `--request-delay-ms <ms>` | Wait between page fetches (default: 250) |
+| `--include-subdomains` | Also follow subdomains of the start host |
+| `--allow-private-network` | Allow loopback, private, and link-local addresses |
 | `--job-db <path>` | Job queue file (default: `.gnosis/jobs.redb`) |
 | `--knowledge-db <path>` | Saved analysis (default: `.gnosis/knowledge.redb`) |
 | `--reanalyze` | Read and analyze every file on this scan |
@@ -218,7 +225,7 @@ Identical file contents, model, and prompt reuse `.gnosis/llm-cache` and skip th
 ### What Gnosis reads today
 
 - **Code:** C++, Rust, and Elixir. Modules, types, functions, imports, includes, and inheritance where the syntax shows it
-- **Documents:** Markdown and plain text
+- **Documents:** Markdown, HTML, and plain text. CSS, JavaScript, images, and fonts are inventoried and not read as text
 - **Data:** JSON, YAML, TOML, and CSV, up to `--max-size`
 - **Model (optional):** images, OCR, and files the readers above leave as unknown or partial
 - **Everything else:** kept in the inventory as unknown or partial, with the path and a guess at the file type
@@ -234,7 +241,7 @@ Gnosis has incremental compilation. The first scan of a folder reads every file 
 
 You see this as `skipped N unchanged`. Those files keep their entities, relationships, and accepted review marks.
 
-Gnosis avoids rereading a local file when the size and modification time are unchanged. If the time changed and the contents did not, it updates the saved time and still skips analysis. For S3, a matching size and ETag skips the download.
+Gnosis avoids rereading a local file when the size and modification time are unchanged. If the time changed and the contents did not, it updates the saved time and still skips analysis. For S3, a matching size and ETag skips the download. For a web page, a matching ETag or `Last-Modified` sends a conditional request. A `304` keeps the stored page, including its entities, relationships, and review marks.
 
 A file is analyzed again when it is new, its contents changed, or the reader that should handle it changed (including a newer version of that reader). A deleted file is removed from the saved inventory, along with the entities and relationships that came from it. A rename is saved as a removal of the old path and an addition of the new one, so an accepted review mark stays on the old path.
 
@@ -257,12 +264,26 @@ gnosis diff snap:abc snap:def
 
 The report lists added and removed files, status changes, and entity and relationship ids that appeared or disappeared.
 
-On a local folder, `gnosis watch` scans, waits until changes have been quiet (default 400 ms, `--debounce-ms`), and scans again. It ignores writes under `.gnosis` and `knowledge.okf`, so saving the database or the export does not start another scan. Watch is for a folder on disk. An `s3://` path is rejected.
+On a local folder, `gnosis watch` scans, waits until changes have been quiet (default 400 ms, `--debounce-ms`), and scans again. It ignores writes under `.gnosis` and `knowledge.okf`, so saving the database or the export does not start another scan. Watch is for a folder on disk. An `s3://` or `http(s)` target is rejected.
 
 ```sh
 gnosis watch .
 gnosis watch ./src --debounce-ms 800
 ```
+
+## Web crawl
+
+```sh
+gnosis scan https://example.com/docs --no-tui
+```
+
+A web scan starts at one URL and follows HTML links. The defaults are 50 pages, two links deep, four pages at a time, 250 ms between fetches, a 15 second timeout, and five redirects. Each page is capped by `--max-size` (2 MiB). The crawl stays on the same origin, reads `robots.txt`, and sends `gnosis/<version>` as the user agent. `--include-subdomains` also follows hosts under the start host. Those flags, and `--allow-private-network`, are rejected on a folder or bucket scan.
+
+Gnosis does not run JavaScript and does not send cookies or authorization headers. Pages are stored in the same `.gnosis/knowledge.redb` as files. There is no second crawl database. A later scan skips a page whose ETag or modification time is unchanged. A URL that is no longer linked is removed. Files and bucket objects already in the knowledge file stay where they are.
+
+Loopback, private, link-local, and cloud metadata addresses are rejected on the start URL and on every redirect. `--allow-private-network` is the explicit opt-in for a local server. Gnosis checks the address before the request and again on each redirect it follows. It does not re-check that address at the moment a connection is opened, so this is not a DNS-rebinding guarantee.
+
+`gnosis watch` does not crawl the web.
 
 ## Adding Gnosis in your CI/CD
 
@@ -600,7 +621,8 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Limitations
 
-- Sources today are a local folder and S3. `gnosis watch` is a local folder
+- A web crawl does not run JavaScript, does not send cookies or authorization, and is not watched. There is no separate crawl database
+- `gnosis watch` is a local folder. An `s3://` or `http(s)` target is rejected
 - Include and import invalidation matches the included path as a suffix. A rename keeps an accepted review mark on the old path
 - Model reading is opt-in (`--features llm` and `--llm`). Model claims stay inferences until accepted. There is no vector index
 - Tree-sitter follows syntax. It is not a substitute for a compiler or type checker

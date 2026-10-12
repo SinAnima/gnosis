@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-11
+
+### Added
+
+- **Web crawl** — `gnosis scan https://…` fetches a bounded set of pages (50 pages, depth 2, 4 at a time, 250 ms delay, 15 s timeout, 5 redirects, same origin, `robots.txt`). `--max-pages`, `--max-depth`, `--max-concurrency`, `--request-delay-ms`, `--include-subdomains`, and `--allow-private-network` apply only to web scans.
+- **HTML reader** — title, headings, description, language, canonical link, and links (`links_to`, `references_external`, `references_asset`, `redirects_to`, `declares_canonical`). CSS, JavaScript, images, and fonts stay unknown. The HTML reader wins over the optional model.
+- **Conditional refetch** — a later scan sends `If-None-Match` / `If-Modified-Since`. A `304`, or a matching fingerprint and HTML reader version, skips analysis and keeps entities, relationships, and review marks. A URL that disappears is removed. Other stored objects stay.
+
+### Notes
+
+- No JavaScript, no cookies or authorization headers, no web watch, and no separate crawl database. Addresses are checked before each request and on each redirect Gnosis follows. That is not a DNS-rebinding guarantee at connect time.
+
 ## [Unreleased]
 
 ### Added
@@ -15,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **YAML parser** — documents and OKF frontmatter use `yaml-rust2` instead of archived `serde_yaml`, which depended on unmaintained `unsafe-libyaml` (`RUSTSEC-2024-0449`).
 - **`cargo audit`** — `h2` 0.4.20 (`RUSTSEC-2026-0258`), `rustls` 0.23.45 (`RUSTSEC-2026-0285`), and unyanked `chacha20` 0.10.2. `aws-sdk-s3` 1.146.1 drops unsound `lru` 0.16 (`RUSTSEC-2026-0253`).
 - **crates.io package size** — the published crate omits the demo PDF and PNGs under `fixtures/mixed-repo/docs/`. Those files stay in git; crates.io rejects uploads over 10 MiB.
 
@@ -86,7 +99,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/SinAnima/gnosis/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SinAnima/gnosis/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SinAnima/gnosis/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SinAnima/gnosis/releases/tag/v0.1.0

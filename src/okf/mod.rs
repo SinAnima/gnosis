@@ -170,7 +170,9 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
         )?;
     }
 
-    for obj in store.objects() {
+    let mut pages: Vec<_> = store.objects().collect();
+    pages.sort_by(|a, b| a.descriptor.id.as_str().cmp(b.descriptor.id.as_str()));
+    for obj in pages {
         let path = obj.descriptor.relative_path.display().to_string();
         let body = format!(
             "# {}\n\n\
@@ -278,6 +280,15 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
             "datasets": inv.datasets,
         },
         "providers": store.enabled_providers(),
+        "acquisitions": store
+            .acquisitions()
+            .iter()
+            .map(|note| serde_json::json!({
+                "url": note.url,
+                "kind": note.kind,
+                "detail": note.detail,
+            }))
+            .collect::<Vec<_>>(),
         "note": "Confidence, provider provenance, and understanding status are also embedded in document frontmatter."
     });
     fs::write(
@@ -370,10 +381,56 @@ fn write_doc(path: &Path, fm: &Frontmatter, body: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let yaml = serde_yaml::to_string(fm)?;
+    let yaml = frontmatter_yaml(fm)?;
     let content = format!("---\n{yaml}---\n\n{body}");
     fs::write(path, content)?;
     Ok(())
+}
+
+fn frontmatter_yaml(fm: &Frontmatter) -> anyhow::Result<String> {
+    use yaml_rust2::{Yaml, YamlEmitter};
+
+    let mut map = yaml_rust2::yaml::Hash::new();
+    let mut insert = |key: &str, value: Yaml| {
+        map.insert(Yaml::String(key.to_string()), value);
+    };
+    let text = |value: &str| Yaml::String(value.to_string());
+    insert("id", text(&fm.id));
+    insert("type", text(&fm.type_));
+    insert("title", text(&fm.title));
+    if let Some(source) = &fm.source {
+        insert("source", text(source));
+    }
+    if let Some(confidence) = &fm.confidence {
+        insert("confidence", text(confidence));
+    }
+    if let Some(provider) = &fm.provider {
+        insert("provider", text(provider));
+    }
+    if let Some(status) = &fm.status {
+        insert("status", text(status));
+    }
+    if !fm.related.is_empty() {
+        insert(
+            "related",
+            Yaml::Array(fm.related.iter().map(|item| text(item)).collect()),
+        );
+    }
+    if let Some(kind) = &fm.gnosis_kind {
+        insert("gnosis_kind", text(kind));
+    }
+
+    let mut out = String::new();
+    let mut emitter = YamlEmitter::new(&mut out);
+    emitter
+        .dump(&Yaml::Hash(map))
+        .map_err(|e| anyhow::anyhow!("yaml frontmatter: {e}"))?;
+    let body = out.strip_prefix("---\n").unwrap_or(out.as_str());
+    if body.ends_with('\n') {
+        Ok(body.to_string())
+    } else {
+        Ok(format!("{body}\n"))
+    }
 }
 
 fn sanitize(name: &str) -> String {
