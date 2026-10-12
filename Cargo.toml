@@ -1,6 +1,6 @@
 [package]
 name = "gnosis"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 authors = ["Thanos Vassilakis"]
@@ -8,7 +8,7 @@ repository = "https://github.com/SinAnima/gnosis"
 homepage = "https://github.com/SinAnima/gnosis"
 documentation = "https://docs.rs/gnosis"
 rust-version = "1.85"
-description = "Compile a project folder or S3 bucket into a structured inventory of code, documents, and data"
+description = "Compile a project folder, S3 bucket, or documentation site into a structured inventory of code, documents, and data"
 readme = "README.md"
 keywords = ["knowledge", "compiler", "okf", "tree-sitter", "tui"]
 categories = ["command-line-utilities", "development-tools"]
@@ -48,9 +48,13 @@ notify = "6.1"
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = "0.30"
 redb = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip"] }
+scraper = "0.27"
+spider = { version = "2.53", optional = true, default-features = false, features = ["sync", "headers", "rate_limit", "reqwest_rustls_tls"] }
+url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+yaml-rust2 = { version = "0.13", default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 toml = "1.1"
@@ -67,6 +71,8 @@ predicates = "3"
 tempfile = "3"
 
 [features]
-default = []
+default = ["web"]
 # Optional multi-provider LLM semantic extraction (`genai` + prompt packs).
 llm = ["dep:genai", "dep:base64"]
+# HTTP(S) crawl. On by default so `gnosis scan https://…` works in a normal build.
+web = ["dep:spider"]

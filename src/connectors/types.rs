@@ -35,6 +35,13 @@ pub struct ProtoData {
     pub permissions: Option<String>,
     pub fingerprint: Option<String>,
     pub git: Option<GitProtoData>,
+    /// Set for web pages. Absent on filesystem and S3 objects.
+    #[serde(default)]
+    pub http_status: Option<u16>,
+    #[serde(default)]
+    pub requested_url: Option<String>,
+    #[serde(default)]
+    pub final_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

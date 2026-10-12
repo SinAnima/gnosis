@@ -18,7 +18,7 @@ use std::time::Duration;
     name = "gnosis",
     version,
     about = "Gnosis — enterprise knowledge compiler",
-    long_about = "Compile a local repository or S3 bucket into structured, traceable knowledge (OKF)."
+    long_about = "Compile a local repository, S3 bucket, or documentation site into structured, traceable knowledge (OKF)."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -90,6 +90,24 @@ enum Commands {
         /// Directory for cached LLM replies
         #[arg(long, default_value = ".gnosis/llm-cache")]
         llm_cache_dir: PathBuf,
+        /// Maximum HTML pages to fetch (web scans)
+        #[arg(long)]
+        max_pages: Option<u64>,
+        /// Link depth beyond the start URL (web scans)
+        #[arg(long)]
+        max_depth: Option<u32>,
+        /// Simultaneous page fetches (web scans)
+        #[arg(long)]
+        max_concurrency: Option<usize>,
+        /// Delay between page fetches in milliseconds (web scans)
+        #[arg(long)]
+        request_delay_ms: Option<u64>,
+        /// Follow links on subdomains of the start host (web scans)
+        #[arg(long)]
+        include_subdomains: bool,
+        /// Allow loopback, private, and link-local addresses (web scans)
+        #[arg(long)]
+        allow_private_network: bool,
     },
     /// List or accept pending LLM review marks in an OKF bundle
     Review {
@@ -295,6 +313,12 @@ fn main() -> Result<()> {
             llm_cache_dir,
             knowledge_db,
             reanalyze,
+            max_pages,
+            max_depth,
+            max_concurrency,
+            request_delay_ms,
+            include_subdomains,
+            allow_private_network,
         } => run_scan(
             path,
             no_tui,
@@ -314,6 +338,14 @@ fn main() -> Result<()> {
             llm_cache_dir,
             knowledge_db,
             reanalyze,
+            WebFlags {
+                max_pages,
+                max_depth,
+                max_concurrency,
+                request_delay_ms,
+                include_subdomains,
+                allow_private_network,
+            },
         ),
         Commands::Diff {
             from,
@@ -399,6 +431,26 @@ fn run_diff(from: Option<String>, to: Option<String>, knowledge_db: PathBuf) -> 
     Ok(())
 }
 
+struct WebFlags {
+    max_pages: Option<u64>,
+    max_depth: Option<u32>,
+    max_concurrency: Option<usize>,
+    request_delay_ms: Option<u64>,
+    include_subdomains: bool,
+    allow_private_network: bool,
+}
+
+impl WebFlags {
+    fn any(&self) -> bool {
+        self.max_pages.is_some()
+            || self.max_depth.is_some()
+            || self.max_concurrency.is_some()
+            || self.request_delay_ms.is_some()
+            || self.include_subdomains
+            || self.allow_private_network
+    }
+}
+
 fn run_watch(
     path: String,
     debounce_ms: u64,
@@ -406,7 +458,12 @@ fn run_watch(
     knowledge_db: PathBuf,
     max_size: u64,
 ) -> Result<()> {
-    if is_s3_uri(&path) {
+    if is_s3_uri(&path)
+        || matches!(
+            gnosis::connectors::web::classify_target(&path, false),
+            gnosis::connectors::web::TargetClass::Web(_) | gnosis::connectors::web::TargetClass::S3
+        )
+    {
         bail!("gnosis watch is filesystem-only");
     }
     let root = PathBuf::from(&path);
@@ -436,6 +493,14 @@ fn run_watch(
             PathBuf::from(".gnosis/llm-cache"),
             knowledge_db.clone(),
             false,
+            WebFlags {
+                max_pages: None,
+                max_depth: None,
+                max_concurrency: None,
+                request_delay_ms: None,
+                include_subdomains: false,
+                allow_private_network: false,
+            },
         )?;
         eprintln!(
             "watching {} — next scan after {}ms of quiet (Ctrl-C to stop)",
@@ -753,19 +818,52 @@ fn run_scan(
     llm_cache_dir: PathBuf,
     knowledge_db: PathBuf,
     reanalyze: bool,
+    web: WebFlags,
 ) -> Result<()> {
-    let mut config = if is_s3_uri(&path) {
-        let location = parse_s3_uri(&path).map_err(|e| anyhow::anyhow!(e))?;
-        ScanConfig::with_source(ScanSource::S3 { location, region })
-    } else {
-        let path = PathBuf::from(&path);
-        if !path.exists() {
-            bail!("path does not exist: {}", path.display());
+    let exists = PathBuf::from(&path).exists();
+    let mut config = match gnosis::connectors::web::classify_target(&path, exists) {
+        gnosis::connectors::web::TargetClass::S3 => {
+            if web.any() {
+                bail!("web crawl flags apply only to http(s) scans");
+            }
+            let location = parse_s3_uri(&path).map_err(|e| anyhow::anyhow!(e))?;
+            ScanConfig::with_source(ScanSource::S3 { location, region })
         }
-        ScanConfig::with_root(
-            path.canonicalize()
-                .with_context(|| format!("canonicalize {}", path.display()))?,
-        )
+        gnosis::connectors::web::TargetClass::Web(start_url) => {
+            let mut policy =
+                gnosis::connectors::web::CrawlPolicy::default().with_object_limit(max_size);
+            if let Some(n) = web.max_pages {
+                policy.max_pages = n;
+            }
+            if let Some(n) = web.max_depth {
+                policy.max_depth = n;
+            }
+            if let Some(n) = web.max_concurrency {
+                policy.max_concurrency = n.max(1);
+            }
+            if let Some(n) = web.request_delay_ms {
+                policy.delay_ms = n;
+            }
+            if web.include_subdomains {
+                policy.scope = gnosis::connectors::web::CrawlScope::IncludeSubdomains;
+            }
+            policy.allow_private_network = web.allow_private_network;
+            ScanConfig::with_source(ScanSource::Web { start_url, policy })
+        }
+        gnosis::connectors::web::TargetClass::Unsupported(message) => bail!("{message}"),
+        gnosis::connectors::web::TargetClass::Filesystem => {
+            if web.any() {
+                bail!("web crawl flags apply only to http(s) scans");
+            }
+            let path = PathBuf::from(&path);
+            if !path.exists() {
+                bail!("path does not exist: {}", path.display());
+            }
+            ScanConfig::with_root(
+                path.canonicalize()
+                    .with_context(|| format!("canonicalize {}", path.display()))?,
+            )
+        }
     };
     config.max_object_size = max_size;
     if let Some(c) = concurrency {
@@ -808,7 +906,10 @@ fn run_scan(
     let resolve_output = |output: &PathBuf| -> PathBuf {
         if output.is_absolute() {
             output.clone()
-        } else if matches!(config.source, ScanSource::S3 { .. }) {
+        } else if matches!(
+            config.source,
+            ScanSource::S3 { .. } | ScanSource::Web { .. }
+        ) {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .join(output)
@@ -830,6 +931,26 @@ fn run_scan(
             .objects_skipped
             .load(std::sync::atomic::Ordering::Relaxed);
         println!("analyzed {analyzed}, skipped {skipped} unchanged");
+        let fetched = handle
+            .metrics
+            .crawl_fetched
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if fetched > 0
+            || handle
+                .metrics
+                .crawl_discovered
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0
+        {
+            println!(
+                "crawl discovered {}, fetched {fetched}, blocked {}, skipped {}, failed {}, bytes {}",
+                handle.metrics.crawl_discovered.load(std::sync::atomic::Ordering::Relaxed),
+                handle.metrics.crawl_blocked.load(std::sync::atomic::Ordering::Relaxed),
+                handle.metrics.crawl_skipped.load(std::sync::atomic::Ordering::Relaxed),
+                handle.metrics.crawl_failed.load(std::sync::atomic::Ordering::Relaxed),
+                handle.metrics.crawl_bytes.load(std::sync::atomic::Ordering::Relaxed),
+            );
+        }
 
         let store = handle.store.lock().unwrap();
         let q = QueryEngine::new(&store);
@@ -929,6 +1050,7 @@ fn resolve_llm_config(
 const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
 
   gnosis scan <path>                 Live TUI scan (local directory)
+  gnosis scan https://host/docs      Bounded web crawl (no JavaScript, no auth)
   gnosis scan s3://bucket[/prefix]   Scan an S3 bucket (keys = paths)
   gnosis scan <target> --no-tui      Headless scan (prints summary)
   gnosis scan <target> --no-tui --export
@@ -936,6 +1058,7 @@ const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
   gnosis scan <target> --llm --llm-max-requests N --llm-max-tokens N
   gnosis scan <target> --reanalyze     Ignore the knowledge store for one scan
   gnosis watch <path>                Incremental filesystem scan on change
+  gnosis scan https://host --max-pages N --max-depth N --include-subdomains
   gnosis diff                        Compare the latest two snapshots
   gnosis review list [--okf knowledge.okf]
   gnosis review accept <id> [--okf knowledge.okf]

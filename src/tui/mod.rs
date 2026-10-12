@@ -345,7 +345,7 @@ impl TuiApp {
             let snap = self.metrics.snapshot(0);
             let s = q.stats();
             self.output_message = format!(
-                "scan metrics:\n  discovered: {}\n  bytes: {}\n  understood/partial/unknown/failed: {}/{}/{}/{}\n  entities/relationships: {}/{}\n  elapsed_ms: {}\n  llm_requests: {} (errors {}) cache_hits: {}\n  llm_tokens: {} total (prompt {} / completion {})\n  llm_budget: requests {} / tokens {} (0 = unlimited)\n\ninventory:\n  {s:?}",
+                "scan metrics:\n  discovered: {}\n  bytes: {}\n  understood/partial/unknown/failed: {}/{}/{}/{}\n  entities/relationships: {}/{}\n  elapsed_ms: {}\n  crawl discovered/fetched/blocked/skipped/failed: {}/{}/{}/{}/{}\n  crawl_bytes: {}\n  llm_requests: {} (errors {}) cache_hits: {}\n  llm_tokens: {} total (prompt {} / completion {})\n  llm_budget: requests {} / tokens {} (0 = unlimited)\n\ninventory:\n  {s:?}",
                 snap.objects_discovered,
                 snap.bytes_considered,
                 snap.understood,
@@ -355,6 +355,12 @@ impl TuiApp {
                 snap.entities,
                 snap.relationships,
                 snap.elapsed_ms,
+                snap.crawl_discovered,
+                snap.crawl_fetched,
+                snap.crawl_blocked,
+                snap.crawl_skipped,
+                snap.crawl_failed,
+                snap.crawl_bytes,
                 snap.llm_requests,
                 snap.llm_errors,
                 snap.llm_cache_hits,

@@ -15,6 +15,11 @@ pub enum ScanSource {
         /// Optional AWS region override (otherwise default chain / env).
         region: Option<String>,
     },
+    /// Bounded HTTP(S) crawl starting at one URL.
+    Web {
+        start_url: String,
+        policy: crate::connectors::web::CrawlPolicy,
+    },
 }
 
 impl ScanSource {
@@ -22,6 +27,7 @@ impl ScanSource {
         match self {
             Self::Filesystem { .. } => "filesystem",
             Self::S3 { .. } => "s3",
+            Self::Web { .. } => "web",
         }
     }
 
@@ -29,6 +35,7 @@ impl ScanSource {
         match self {
             Self::Filesystem { root } => root.clone(),
             Self::S3 { location, .. } => location.display_root(),
+            Self::Web { start_url, .. } => PathBuf::from(start_url),
         }
     }
 
@@ -272,6 +279,12 @@ pub struct ScanMetrics {
     pub relationships: AtomicU64,
     pub objects_analyzed: AtomicU64,
     pub objects_skipped: AtomicU64,
+    pub crawl_discovered: AtomicU64,
+    pub crawl_fetched: AtomicU64,
+    pub crawl_blocked: AtomicU64,
+    pub crawl_skipped: AtomicU64,
+    pub crawl_failed: AtomicU64,
+    pub crawl_bytes: AtomicU64,
     counted: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Shared with [`crate::providers::LlmSemanticProvider`] when LLM is enabled.
     pub llm: std::sync::Arc<LlmMetrics>,
@@ -315,6 +328,12 @@ impl ScanMetrics {
             llm_total_tokens: self.llm.total_tokens.load(Ordering::Relaxed),
             llm_max_requests: self.llm.max_requests.load(Ordering::Relaxed),
             llm_max_tokens: self.llm.max_tokens.load(Ordering::Relaxed),
+            crawl_discovered: self.crawl_discovered.load(Ordering::Relaxed),
+            crawl_fetched: self.crawl_fetched.load(Ordering::Relaxed),
+            crawl_blocked: self.crawl_blocked.load(Ordering::Relaxed),
+            crawl_skipped: self.crawl_skipped.load(Ordering::Relaxed),
+            crawl_failed: self.crawl_failed.load(Ordering::Relaxed),
+            crawl_bytes: self.crawl_bytes.load(Ordering::Relaxed),
         }
     }
 

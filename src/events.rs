@@ -90,6 +90,18 @@ pub struct MetricsSnapshot {
     pub llm_total_tokens: u64,
     pub llm_max_requests: u64,
     pub llm_max_tokens: u64,
+    #[serde(default)]
+    pub crawl_discovered: u64,
+    #[serde(default)]
+    pub crawl_fetched: u64,
+    #[serde(default)]
+    pub crawl_blocked: u64,
+    #[serde(default)]
+    pub crawl_skipped: u64,
+    #[serde(default)]
+    pub crawl_failed: u64,
+    #[serde(default)]
+    pub crawl_bytes: u64,
 }
 
 impl PipelineEvent {

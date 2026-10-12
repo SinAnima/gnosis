@@ -21,7 +21,7 @@ mod util;
 
 pub use code::{CppProvider, ElixirProvider, RustProvider};
 pub use data::{CsvProvider, JsonProvider, TomlProvider, YamlProvider};
-pub use docs::{MarkdownProvider, PlainTextProvider};
+pub use docs::{HtmlProvider, MarkdownProvider, PlainTextProvider};
 pub use generic::GenericMetadataProvider;
 #[cfg(feature = "llm")]
 pub use llm::{
@@ -59,6 +59,7 @@ pub fn build_registry(
     registry.register(Box::new(RustProvider));
     registry.register(Box::new(ElixirProvider));
     registry.register(Box::new(MarkdownProvider));
+    registry.register(Box::new(HtmlProvider));
 
     #[cfg(feature = "llm")]
     if let Some(cfg) = llm {

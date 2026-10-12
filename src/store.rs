@@ -12,6 +12,13 @@ pub trait ReviewSink: Send + Sync {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AcquisitionNote {
+    pub url: String,
+    pub kind: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StoredObject {
     pub descriptor: ObjectDescriptor,
     pub proto: ProtoData,
@@ -47,6 +54,7 @@ pub struct KnowledgeStore {
     by_path: HashMap<String, ObjectId>,
     reverse_rels: HashMap<EntityId, HashSet<RelationshipId>>,
     forward_rels: HashMap<EntityId, HashSet<RelationshipId>>,
+    acquisitions: Vec<AcquisitionNote>,
     /// Relationships produced by each object, so a rewrite can drop them.
     produced_rels: HashMap<ObjectId, Vec<RelationshipId>>,
     /// Why this scan kept or redid each object (`unchanged`, `content`, …).
@@ -136,6 +144,15 @@ impl KnowledgeStore {
 
     pub fn set_scan_id(&mut self, scan_id: impl Into<String>) {
         self.scan_id = Some(scan_id.into());
+    }
+
+    pub fn record_acquisition(&mut self, url: String, kind: String, detail: String) {
+        self.acquisitions
+            .push(AcquisitionNote { url, kind, detail });
+    }
+
+    pub fn acquisitions(&self) -> &[AcquisitionNote] {
+        &self.acquisitions
     }
 
     pub fn scan_id(&self) -> Option<&str> {
