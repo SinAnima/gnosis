@@ -39,7 +39,7 @@ jobs:
           fi
       - name: Create Pull Request
         if: steps.check-updates.outputs.updates == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore: update dependencies for security fixes'
@@ -80,7 +80,7 @@ jobs:
         run: cargo test --all-targets
       - name: Create Pull Request
         if: steps.check-updates.outputs.updates == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore: upgrade dependencies'
