@@ -1,7 +1,7 @@
 //! List and accept LLM review marks.
 //!
-//! The live scan store is in memory. After export, `gnosis review` edits the
-//! `review` attribute in the OKF bundle. That is not a separate review database.
+//! The knowledge database is the source of truth. `gnosis review accept` updates
+//! that store and, when an OKF bundle is present, the same mark in the bundle.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,6 +31,25 @@ pub fn format_reviews(rows: &[ReviewRow]) -> String {
 
 pub fn list_okf(dir: &Path) -> Result<Vec<ReviewRow>, String> {
     load_docs(dir).map(|docs| docs.into_iter().map(Doc::into_row).collect())
+}
+
+pub fn resolve_review_id(rows: &[ReviewRow], query: &str) -> Result<String, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Err("review id required".into());
+    }
+    let mut matches: Vec<&str> = rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .filter(|id| *id == q || id.ends_with(q) || id.contains(q))
+        .collect();
+    matches.sort();
+    matches.dedup();
+    match matches.len() {
+        0 => Err(format!("review target not found: {q}")),
+        1 => Ok(matches[0].to_string()),
+        n => Err(format!("ambiguous review id '{q}' ({n} matches)")),
+    }
 }
 
 pub fn accept_okf(dir: &Path, query: &str) -> Result<String, String> {

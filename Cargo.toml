@@ -1,6 +1,6 @@
 [package]
 name = "gnosis"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 authors = ["Thanos Vassilakis"]
@@ -8,11 +8,17 @@ repository = "https://github.com/SinAnima/gnosis"
 homepage = "https://github.com/SinAnima/gnosis"
 documentation = "https://docs.rs/gnosis"
 rust-version = "1.85"
-description = "Gnosis — enterprise knowledge compiler (CLI + library)"
+description = "Compile a project folder or S3 bucket into a structured inventory of code, documents, and data"
 readme = "README.md"
 keywords = ["knowledge", "compiler", "okf", "tree-sitter", "tui"]
 categories = ["command-line-utilities", "development-tools"]
 default-run = "gnosis"
+# crates.io rejects uploads over 10 MiB. These demo binaries stay in git
+# for local scans and are omitted from the published crate.
+exclude = [
+    "fixtures/mixed-repo/docs/*.pdf",
+    "fixtures/mixed-repo/docs/*.png",
+]
 
 [lib]
 name = "gnosis"
@@ -38,6 +44,7 @@ csv = "1"
 genai = { version = "0.5.3", optional = true }
 ignore = "0.4"
 mime_guess = "2"
+notify = "6.1"
 pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = "0.30"
 redb = "2"

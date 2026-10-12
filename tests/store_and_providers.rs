@@ -65,6 +65,7 @@ fn provider_selection_prefers_full_over_weak() {
         modified: None,
         media_type: "text/plain".into(),
         extension: Some("rs".into()),
+        etag: None,
     };
     let proto = ProtoData::default();
     let (p, support) = reg.select(&obj, &proto).unwrap();
@@ -84,6 +85,7 @@ fn store_find_and_inventory() {
         modified: None,
         media_type: "text/x-rust".into(),
         extension: Some("rs".into()),
+        etag: None,
     };
     store.upsert_object(gnosis::StoredObject {
         descriptor: obj.clone(),

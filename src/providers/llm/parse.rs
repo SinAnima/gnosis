@@ -294,6 +294,7 @@ mod tests {
             modified: None,
             media_type: "text/x-rust".into(),
             extension: Some("rs".into()),
+            etag: None,
         }
     }
 

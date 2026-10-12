@@ -6,6 +6,7 @@
 use crate::{Exporter, KnowledgeStore, Result as GnosisResult};
 use anyhow::Context;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -54,7 +55,9 @@ struct Frontmatter {
 }
 
 fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
-    if output.exists() {
+    let incremental = output.join("index.md").is_file();
+    let unchanged = store.unchanged_ids();
+    if !incremental && output.exists() {
         fs::remove_dir_all(output).with_context(|| format!("clear {}", output.display()))?;
     }
     fs::create_dir_all(output)?;
@@ -146,8 +149,12 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
 
         let filename = sanitize(&format!("{}_{}.md", entity.kind, entity.name));
         let provider = entity.evidence.first().map(|e| e.provider.to_string());
+        let path = output.join("entities").join(&filename);
+        if incremental && unchanged.contains(entity.source_object.as_str()) && path.is_file() {
+            continue;
+        }
         write_doc(
-            &output.join("entities").join(&filename),
+            &path,
             &Frontmatter {
                 id: entity.id.as_str().into(),
                 type_: "Concept".into(),
@@ -185,8 +192,12 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
             obj.entity_ids.len()
         );
         let filename = sanitize(&format!("{path}.md"));
+        let page = output.join("objects").join(&filename);
+        if incremental && unchanged.contains(obj.descriptor.id.as_str()) && page.is_file() {
+            continue;
+        }
         write_doc(
-            &output.join("objects").join(&filename),
+            &page,
             &Frontmatter {
                 id: obj.descriptor.id.as_str().into(),
                 type_: "SourceObject".into(),
@@ -227,8 +238,13 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
         );
         let filename = sanitize(&format!("{}.md", rel.id.as_str()));
         let provider = rel.evidence.first().map(|e| e.provider.to_string());
+        let page = output.join("relationships").join(&filename);
+        let owner = relationship_owner(store, rel.id.as_str());
+        if incremental && owner.is_some_and(|id| unchanged.contains(&id)) && page.is_file() {
+            continue;
+        }
         write_doc(
-            &output.join("relationships").join(&filename),
+            &page,
             &Frontmatter {
                 id: rel.id.as_str().into(),
                 type_: "Relationship".into(),
@@ -281,7 +297,73 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
         ),
     )?;
 
+    if incremental {
+        let entity_ids: HashSet<String> = store.entities().map(|e| e.id.to_string()).collect();
+        let object_ids: HashSet<String> = store
+            .objects()
+            .map(|o| o.descriptor.id.to_string())
+            .collect();
+        let rel_ids: HashSet<String> = store
+            .relationships()
+            .map(|r| r.id.as_str().to_string())
+            .collect();
+        remove_stale(&output.join("entities"), &entity_ids)?;
+        remove_stale(&output.join("objects"), &object_ids)?;
+        remove_stale(&output.join("relationships"), &rel_ids)?;
+    }
+
     Ok(())
+}
+
+fn relationship_owner(store: &KnowledgeStore, rel_id: &str) -> Option<String> {
+    for object in store.objects() {
+        if store
+            .relationship_ids_for(&object.descriptor.id)
+            .iter()
+            .any(|id| id == rel_id)
+        {
+            return Some(object.descriptor.id.as_str().to_string());
+        }
+    }
+    None
+}
+
+fn remove_stale(dir: &Path, live: &HashSet<String>) -> anyhow::Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(id) = frontmatter_id(&path) {
+            if !live.contains(&id) {
+                fs::remove_file(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn frontmatter_id(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let mut in_frontmatter = false;
+    for line in text.lines() {
+        if line.trim() == "---" {
+            if in_frontmatter {
+                break;
+            }
+            in_frontmatter = true;
+            continue;
+        }
+        if in_frontmatter {
+            if let Some(rest) = line.strip_prefix("id:") {
+                return Some(rest.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    None
 }
 
 fn write_doc(path: &Path, fm: &Frontmatter, body: &str) -> anyhow::Result<()> {

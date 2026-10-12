@@ -13,10 +13,15 @@ use crate::jobs::{
     prepare_rerun, prepare_rerun_scan, AnalyzeObjectArgs, AnalyzeObjectResult, Job, JobExecutor,
     JobStore, JobWorkerPool, RedbJobStore, RerunReport, KIND_ANALYZE_OBJECT,
 };
+use crate::knowledge_db::{
+    classify_object, collect_deps, dep_matches, unix_ms, Classify, ClassifyInput, KnowledgeDb,
+    PersistedObject, ReanalyzeReason, Snapshot, SnapshotObject,
+};
 use crate::provider::ProviderRegistry;
 use crate::status::UnderstandingStatus;
-use crate::store::{KnowledgeStore, StoredObject};
+use crate::store::{KnowledgeStore, ReviewSink, StoredObject};
 use crossbeam_channel::{bounded, Receiver, Sender};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -30,6 +35,7 @@ pub struct Pipeline {
     metrics: Arc<ScanMetrics>,
     cancel: Arc<AtomicBool>,
     job_store: Arc<dyn JobStore>,
+    knowledge: Arc<KnowledgeDb>,
 }
 
 pub struct PipelineHandle {
@@ -157,6 +163,7 @@ struct AnalyzeExecutor {
     store: Arc<Mutex<KnowledgeStore>>,
     metrics: Arc<ScanMetrics>,
     events: Sender<PipelineEvent>,
+    knowledge: Arc<KnowledgeDb>,
 }
 
 impl JobExecutor for AnalyzeExecutor {
@@ -177,6 +184,7 @@ impl JobExecutor for AnalyzeExecutor {
             &self.store,
             &self.metrics,
             &self.events,
+            &self.knowledge,
         )?;
         serde_json::to_value(result).map_err(|e| GnosisError::Job(format!("encode result: {e}")))
     }
@@ -185,10 +193,15 @@ impl JobExecutor for AnalyzeExecutor {
 impl Pipeline {
     pub fn new(config: ScanConfig, providers: ProviderRegistry) -> Result<Self> {
         let job_store: Arc<dyn JobStore> = Arc::new(RedbJobStore::open(&config.job_db_path)?);
-        Ok(Self::with_job_store(config, providers, job_store))
+        let knowledge = Arc::new(KnowledgeDb::open(&config.knowledge_db_path)?);
+        Ok(Self::with_knowledge(
+            config, providers, job_store, knowledge,
+        ))
     }
 
     /// Build a pipeline with an injected [`JobStore`] (tests / custom backends).
+    ///
+    /// Uses an empty in-memory knowledge database so tests do not share `.gnosis/`.
     pub fn with_job_store(
         config: ScanConfig,
         providers: ProviderRegistry,
@@ -204,6 +217,33 @@ impl Pipeline {
         job_store: Arc<dyn JobStore>,
         metrics: Arc<ScanMetrics>,
     ) -> Self {
+        let knowledge = Arc::new(KnowledgeDb::in_memory().expect("in-memory knowledge db"));
+        Self::with_knowledge(config, providers, job_store, knowledge).with_metrics(metrics)
+    }
+
+    /// Build a pipeline that loads and commits [`KnowledgeDb`].
+    pub fn with_knowledge(
+        config: ScanConfig,
+        providers: ProviderRegistry,
+        job_store: Arc<dyn JobStore>,
+        knowledge: Arc<KnowledgeDb>,
+    ) -> Self {
+        Self::with_knowledge_and_metrics(
+            config,
+            providers,
+            job_store,
+            Arc::new(ScanMetrics::new()),
+            knowledge,
+        )
+    }
+
+    pub fn with_knowledge_and_metrics(
+        config: ScanConfig,
+        providers: ProviderRegistry,
+        job_store: Arc<dyn JobStore>,
+        metrics: Arc<ScanMetrics>,
+        knowledge: Arc<KnowledgeDb>,
+    ) -> Self {
         let mut store = KnowledgeStore::new();
         store.set_root(config.root.clone());
         store.set_connector(config.connector_name().to_string());
@@ -214,6 +254,7 @@ impl Pipeline {
                 .map(|(id, _)| id)
                 .collect(),
         );
+        store.set_review_sink(Arc::clone(&knowledge) as Arc<dyn ReviewSink>);
         Self {
             config,
             providers,
@@ -221,7 +262,13 @@ impl Pipeline {
             metrics,
             cancel: Arc::new(AtomicBool::new(false)),
             job_store,
+            knowledge,
         }
+    }
+
+    fn with_metrics(mut self, metrics: Arc<ScanMetrics>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     pub fn store(&self) -> Arc<Mutex<KnowledgeStore>> {
@@ -345,6 +392,7 @@ impl Pipeline {
             store: Arc::new(Mutex::new(knowledge)),
             metrics: Arc::clone(&metrics),
             events: tx,
+            knowledge: Arc::new(KnowledgeDb::open(&config.knowledge_db_path)?),
         });
 
         let cancel = Arc::new(AtomicBool::new(false));
@@ -466,6 +514,8 @@ impl Pipeline {
             .objects_discovered
             .store(objects.len() as u64, Ordering::Relaxed);
 
+        let objects = self.plan_analysis(&objects, &access)?;
+
         let executor: Arc<dyn JobExecutor> = Arc::new(AnalyzeExecutor {
             providers: Arc::new(self.providers),
             config: self.config.clone(),
@@ -475,6 +525,7 @@ impl Pipeline {
             store: Arc::clone(&self.store),
             metrics: Arc::clone(&self.metrics),
             events: events.clone(),
+            knowledge: Arc::clone(&self.knowledge),
         });
 
         let poll = Duration::from_millis(self.config.job_poll_ms.max(1));
@@ -536,6 +587,8 @@ impl Pipeline {
             return Err(e);
         }
 
+        write_snapshot(&self.knowledge, &self.store, &scan_id)?;
+
         let elapsed = self.metrics.elapsed_ms();
         let discovered = self.metrics.objects_discovered.load(Ordering::Relaxed);
         let _ = events.send(PipelineEvent::MetricsSnapshot {
@@ -550,6 +603,314 @@ impl Pipeline {
         thread::sleep(Duration::from_millis(10));
         Ok(())
     }
+
+    /// Load the knowledge database, drop missing objects, and return only objects
+    /// that need analysis. Unchanged objects stay in the in-memory store.
+    fn plan_analysis(
+        &self,
+        discovered: &[ObjectDescriptor],
+        access: &ObjectAccess,
+    ) -> Result<Vec<ObjectDescriptor>> {
+        let records = self.knowledge.load_all()?;
+        let mut stored: std::collections::HashMap<String, PersistedObject> = records
+            .into_iter()
+            .map(|record| (record.object.descriptor.id.as_str().to_string(), record))
+            .collect();
+        {
+            let mut store = self.store.lock().unwrap();
+            for record in stored.values() {
+                store.install_record(
+                    record.object.clone(),
+                    record.entities.clone(),
+                    record.relationships.clone(),
+                );
+            }
+        }
+
+        let seen: HashSet<String> = discovered
+            .iter()
+            .map(|object| object.id.as_str().to_string())
+            .collect();
+        let stale: Vec<_> = stored
+            .keys()
+            .filter(|id| !seen.contains(id.as_str()))
+            .cloned()
+            .collect();
+        let mut changed_paths = Vec::new();
+        for id in stale {
+            let object_id = crate::ids::ObjectId::new(id);
+            if let Some(record) = stored.remove(object_id.as_str()) {
+                changed_paths.push(
+                    record
+                        .object
+                        .descriptor
+                        .relative_path
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
+            {
+                let mut store = self.store.lock().unwrap();
+                store.remove_object(&object_id);
+            }
+            self.knowledge.delete(&object_id)?;
+        }
+
+        let mut decided: Vec<(ObjectDescriptor, ReanalyzeReason, bool)> = Vec::new();
+        for object in discovered {
+            let mut input = classify_input(object, stored.get(object.id.as_str()), &self.providers);
+            input.reanalyze = self.config.reanalyze;
+            let mut decision = classify_object(&input);
+            if matches!(decision, Classify::NeedBytes) {
+                let bytes = access.read_bytes(object, self.config.max_object_size)?;
+                input.fingerprint = Some(fingerprint_bytes(&bytes));
+                decision = classify_object(&input);
+            }
+            match decision {
+                Classify::Keep { touch_stat } => {
+                    if touch_stat {
+                        self.knowledge.update_stat(
+                            &object.id,
+                            object.size,
+                            unix_ms(object.modified),
+                            object.etag.clone(),
+                        )?;
+                    }
+                    decided.push((object.clone(), ReanalyzeReason::Unchanged, false));
+                }
+                Classify::NeedBytes => {
+                    decided.push((object.clone(), ReanalyzeReason::Content, true));
+                }
+                Classify::Analyze(reason) => {
+                    if matches!(reason, ReanalyzeReason::New | ReanalyzeReason::Content) {
+                        changed_paths.push(object.relative_path.to_string_lossy().to_string());
+                    }
+                    decided.push((object.clone(), reason, true));
+                }
+            }
+        }
+
+        for item in &mut decided {
+            if item.2 {
+                continue;
+            }
+            let Some(record) = stored.get(item.0.id.as_str()) else {
+                continue;
+            };
+            let hit = record
+                .deps
+                .iter()
+                .any(|dep| changed_paths.iter().any(|path| dep_matches(dep, path)));
+            if hit {
+                item.1 = ReanalyzeReason::Dependency;
+                item.2 = true;
+            }
+        }
+
+        let mut analyze = Vec::new();
+        for (object, reason, should_analyze) in decided {
+            self.store
+                .lock()
+                .unwrap()
+                .set_reason(&object.id, reason.as_str());
+            if should_analyze {
+                analyze.push(object);
+                continue;
+            }
+            let status = self
+                .store
+                .lock()
+                .unwrap()
+                .object_status(&object.id)
+                .unwrap_or(UnderstandingStatus::Unknown);
+            self.metrics.record_status(status);
+            self.metrics.mark_counted(object.id.as_str());
+            self.metrics.objects_skipped.fetch_add(1, Ordering::Relaxed);
+            let (entities, rels) = {
+                let store = self.store.lock().unwrap();
+                let entities = store
+                    .get_object(&object.id)
+                    .map(|o| o.entity_ids.len())
+                    .unwrap_or(0);
+                let rels = store.relationship_ids_for(&object.id).len();
+                (entities, rels)
+            };
+            self.metrics
+                .entities
+                .fetch_add(entities as u64, Ordering::Relaxed);
+            self.metrics
+                .relationships
+                .fetch_add(rels as u64, Ordering::Relaxed);
+        }
+        Ok(analyze)
+    }
+}
+
+fn write_snapshot(
+    knowledge: &KnowledgeDb,
+    store: &Mutex<KnowledgeStore>,
+    scan_id: &str,
+) -> Result<()> {
+    let records = knowledge.load_all()?;
+    let store = store.lock().unwrap();
+    let mut objects = Vec::new();
+    for record in records {
+        let id = record.object.descriptor.id.clone();
+        let reason = store
+            .reason(&id)
+            .and_then(parse_reason)
+            .unwrap_or(record.reason);
+        objects.push(SnapshotObject {
+            id: id.as_str().to_string(),
+            relative_path: record
+                .object
+                .descriptor
+                .relative_path
+                .to_string_lossy()
+                .to_string(),
+            fingerprint: record.fingerprint.clone(),
+            status: record.object.status.as_str().to_string(),
+            provider_id: record.provider_id.clone(),
+            provider_version: record.provider_version.clone(),
+            reason,
+            entity_ids: record
+                .object
+                .entity_ids
+                .iter()
+                .map(|e| e.to_string())
+                .collect(),
+            relationship_ids: record
+                .relationships
+                .iter()
+                .map(|r| r.id.as_str().to_string())
+                .collect(),
+        });
+    }
+    for deleted in store.deleted_objects() {
+        objects.push(SnapshotObject {
+            id: deleted.id.clone(),
+            relative_path: deleted.relative_path.clone(),
+            fingerprint: deleted.fingerprint.clone(),
+            status: deleted.status.clone(),
+            provider_id: deleted.provider_id.clone(),
+            provider_version: deleted.provider_version.clone(),
+            reason: ReanalyzeReason::Deleted,
+            entity_ids: deleted.entity_ids.clone(),
+            relationship_ids: deleted.relationship_ids.clone(),
+        });
+    }
+    objects.sort_by(|a, b| a.id.cmp(&b.id));
+    let snapshot = Snapshot {
+        id: format!("snap:{}", Uuid::new_v4()),
+        scan_id: scan_id.to_string(),
+        created_unix_ms: unix_ms(Some(std::time::SystemTime::now())).unwrap_or(0),
+        objects,
+    };
+    knowledge.put_snapshot(&snapshot)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_reason(value: &str) -> Option<ReanalyzeReason> {
+    Some(match value {
+        "new" => ReanalyzeReason::New,
+        "content" => ReanalyzeReason::Content,
+        "provider" => ReanalyzeReason::Provider,
+        "dependency" => ReanalyzeReason::Dependency,
+        "unchanged" => ReanalyzeReason::Unchanged,
+        "deleted" => ReanalyzeReason::Deleted,
+        _ => return None,
+    })
+}
+
+fn classify_input(
+    object: &ObjectDescriptor,
+    stored: Option<&PersistedObject>,
+    providers: &ProviderRegistry,
+) -> ClassifyInput {
+    let proto = ProtoData {
+        media_type: object.media_type.clone(),
+        extension: object.extension.clone(),
+        relative_path: object.relative_path.clone(),
+        filename: object
+            .relative_path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        size: object.size,
+        ..ProtoData::default()
+    };
+    let selected = providers.select(object, &proto);
+    ClassifyInput {
+        reanalyze: false,
+        has_stored: stored.is_some(),
+        stored_fingerprint: stored.and_then(|r| r.fingerprint.clone()),
+        stored_provider_id: stored.and_then(|r| r.provider_id.clone()),
+        stored_provider_version: stored.and_then(|r| r.provider_version.clone()),
+        stored_size: stored.map(|r| r.size).unwrap_or(0),
+        stored_modified_unix_ms: stored.and_then(|r| r.modified_unix_ms),
+        stored_etag: stored.and_then(|r| r.etag.clone()),
+        size: object.size,
+        modified_unix_ms: unix_ms(object.modified),
+        etag: object.etag.clone(),
+        provider_id: selected.map(|(p, _)| p.id().as_str().to_string()),
+        provider_version: selected.map(|(p, _)| p.version().to_string()),
+        fingerprint: None,
+        is_s3: path_looks_like_s3(&object.path),
+    }
+}
+
+fn persist_current(
+    knowledge: &KnowledgeDb,
+    store: &Mutex<KnowledgeStore>,
+    object: &ObjectDescriptor,
+    provider_version: Option<&str>,
+    entities: &[crate::knowledge::Entity],
+    relationships: &[crate::knowledge::Relationship],
+) -> Result<()> {
+    let (stored, reason) = {
+        let st = store.lock().unwrap();
+        let reason = st.reason(&object.id).unwrap_or("content").to_string();
+        (st.get_object(&object.id).cloned(), reason)
+    };
+    let Some(stored) = stored else {
+        return Ok(());
+    };
+    let record = PersistedObject {
+        fingerprint: stored.proto.fingerprint.clone(),
+        provider_id: stored.provider.as_ref().map(|p| p.as_str().to_string()),
+        provider_version: provider_version.map(str::to_string),
+        size: object.size,
+        modified_unix_ms: unix_ms(object.modified),
+        etag: object.etag.clone(),
+        deps: collect_deps(entities, relationships),
+        reason: parse_reason(&reason).unwrap_or(ReanalyzeReason::Content),
+        object: stored,
+        entities: entities.to_vec(),
+        relationships: relationships.to_vec(),
+    };
+    knowledge.put(&record)
+}
+
+fn note_status(
+    metrics: &ScanMetrics,
+    id: &str,
+    prior: Option<UnderstandingStatus>,
+    status: UnderstandingStatus,
+) {
+    let counted = metrics.take_counted(id);
+    if counted && prior == Some(status) {
+        metrics.mark_counted(id);
+        return;
+    }
+    metrics.record_status(status);
+    if counted {
+        if let Some(prev) = prior {
+            if prev != status {
+                metrics.unrecord_status(prev);
+            }
+        }
+    }
+    metrics.mark_counted(id);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -563,7 +924,9 @@ fn process_object(
     store: &Mutex<KnowledgeStore>,
     metrics: &ScanMetrics,
     events: &Sender<PipelineEvent>,
+    knowledge: &KnowledgeDb,
 ) -> Result<AnalyzeObjectResult> {
+    metrics.objects_analyzed.fetch_add(1, Ordering::Relaxed);
     metrics
         .bytes_considered
         .fetch_add(object.size, Ordering::Relaxed);
@@ -609,8 +972,18 @@ fn process_object(
                 entity_ids: Vec::new(),
                 diagnostics: Vec::new(),
             };
-            store.lock().unwrap().upsert_object(stored);
-            metrics.record_status(UnderstandingStatus::Unknown);
+            let prior = store.lock().unwrap().object_status(&object.id);
+            store
+                .lock()
+                .unwrap()
+                .replace_analysis(stored, Vec::new(), Vec::new());
+            note_status(
+                metrics,
+                object.id.as_str(),
+                prior,
+                UnderstandingStatus::Unknown,
+            );
+            persist_current(knowledge, store, object, None, &[], &[])?;
             let _ = events.send(PipelineEvent::ObjectClassified {
                 id: object.id.clone(),
                 status: UnderstandingStatus::Unknown,
@@ -643,21 +1016,27 @@ fn process_object(
         Err(err) => {
             let message = crate::scrub::scrub_secrets(&err.to_string());
             let prior = store.lock().unwrap().object_status(&object.id);
-            if prior != Some(UnderstandingStatus::Failed) {
-                if let Some(prev) = prior {
-                    metrics.unrecord_status(prev);
-                }
-                metrics.record_status(UnderstandingStatus::Failed);
-            }
-            store.lock().unwrap().upsert_object(StoredObject {
-                descriptor: object.clone(),
-                proto,
-                status: UnderstandingStatus::Failed,
-                provider: Some(provider.id()),
-                classification_reason: Some(message.clone()),
-                entity_ids: Vec::new(),
-                diagnostics: vec![message.clone()],
-            });
+            let version = provider.version().to_string();
+            store.lock().unwrap().replace_analysis(
+                StoredObject {
+                    descriptor: object.clone(),
+                    proto,
+                    status: UnderstandingStatus::Failed,
+                    provider: Some(provider.id()),
+                    classification_reason: Some(message.clone()),
+                    entity_ids: Vec::new(),
+                    diagnostics: vec![message.clone()],
+                },
+                Vec::new(),
+                Vec::new(),
+            );
+            note_status(
+                metrics,
+                object.id.as_str(),
+                prior,
+                UnderstandingStatus::Failed,
+            );
+            persist_current(knowledge, store, object, Some(&version), &[], &[])?;
             let _ = events.send(PipelineEvent::ObjectClassified {
                 id: object.id.clone(),
                 status: UnderstandingStatus::Failed,
@@ -667,36 +1046,36 @@ fn process_object(
         }
     };
 
-    let mut entity_ids = Vec::new();
+    let entity_ids: Vec<_> = result
+        .record
+        .entities
+        .iter()
+        .map(|e| e.id.clone())
+        .collect();
     let prior = store.lock().unwrap().object_status(&object.id);
-    {
-        let mut st = store.lock().unwrap();
-        for entity in &result.record.entities {
-            entity_ids.push(entity.id.clone());
-            let _ = events.send(PipelineEvent::EntityCreated {
-                entity: entity.clone(),
-            });
-            st.add_entity(entity.clone());
-            metrics.entities.fetch_add(1, Ordering::Relaxed);
-        }
-        for rel in &result.record.relationships {
-            let _ = events.send(PipelineEvent::RelationshipCreated {
-                kind: rel.kind.clone(),
-                from: rel.from.to_string(),
-                to: rel.to.to_string(),
-            });
-            st.add_relationship(rel.clone());
-            metrics.relationships.fetch_add(1, Ordering::Relaxed);
-        }
-
-        let diagnostics: Vec<String> = result
-            .record
-            .diagnostics
-            .iter()
-            .map(|d| d.message.clone())
-            .collect();
-
-        st.upsert_object(StoredObject {
+    for entity in &result.record.entities {
+        let _ = events.send(PipelineEvent::EntityCreated {
+            entity: entity.clone(),
+        });
+        metrics.entities.fetch_add(1, Ordering::Relaxed);
+    }
+    for rel in &result.record.relationships {
+        let _ = events.send(PipelineEvent::RelationshipCreated {
+            kind: rel.kind.clone(),
+            from: rel.from.to_string(),
+            to: rel.to.to_string(),
+        });
+        metrics.relationships.fetch_add(1, Ordering::Relaxed);
+    }
+    let diagnostics: Vec<String> = result
+        .record
+        .diagnostics
+        .iter()
+        .map(|d| d.message.clone())
+        .collect();
+    let version = provider.version().to_string();
+    store.lock().unwrap().replace_analysis(
+        StoredObject {
             descriptor: object.clone(),
             proto,
             status: result.status,
@@ -704,15 +1083,19 @@ fn process_object(
             classification_reason: result.classification_reason.clone(),
             entity_ids,
             diagnostics,
-        });
-    }
-
-    metrics.record_status(result.status);
-    if let Some(prev) = prior {
-        if prev != result.status {
-            metrics.unrecord_status(prev);
-        }
-    }
+        },
+        result.record.entities.clone(),
+        result.record.relationships.clone(),
+    );
+    note_status(metrics, object.id.as_str(), prior, result.status);
+    persist_current(
+        knowledge,
+        store,
+        object,
+        Some(&version),
+        &result.record.entities,
+        &result.record.relationships,
+    )?;
     let _ = events.send(PipelineEvent::AnalysisCompleted {
         id: object.id.clone(),
         provider: provider.id(),

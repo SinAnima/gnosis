@@ -157,6 +157,7 @@ fn provider_probe_rejects_wrong_extensions() {
         modified: None,
         media_type: "application/octet-stream".into(),
         extension: Some("bin".into()),
+        etag: None,
     };
     let proto = ProtoData::default();
     assert_eq!(CppProvider.probe(&obj, &proto), Support::None);

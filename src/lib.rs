@@ -12,6 +12,7 @@ pub mod exporter;
 pub mod ids;
 pub mod jobs;
 pub mod knowledge;
+pub mod knowledge_db;
 pub mod okf;
 pub mod pipeline;
 pub mod prompts;
@@ -23,6 +24,7 @@ pub mod scrub;
 pub mod status;
 pub mod store;
 pub mod tui;
+pub mod watch;
 
 pub use config::{LlmConfig, LlmMetrics, LlmMode, ScanConfig, ScanMetrics, ScanSource};
 pub use connectors::{
@@ -46,6 +48,7 @@ pub use knowledge::{
     AnalysisResult, AttributeMap, Confidence, Diagnostic, DiagnosticSeverity, Entity, Evidence,
     KnowledgeRecord, Relationship, SourceSpan,
 };
+pub use knowledge_db::{format_diff, KnowledgeDb, ReanalyzeReason, Snapshot};
 pub use okf::OkfExporter;
 pub use pipeline::{Pipeline, PipelineHandle};
 pub use prompts::{select_prompt_kind, PromptKind, PromptPack, RESPONSE_SCHEMA};

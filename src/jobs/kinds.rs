@@ -22,6 +22,9 @@ pub struct AnalyzeObjectArgs {
     pub modified_unix_ms: Option<u64>,
     pub media_type: String,
     pub extension: Option<String>,
+    /// S3 ETag, when the descriptor had one.
+    #[serde(default)]
+    pub etag: Option<String>,
 }
 
 impl AnalyzeObjectArgs {
@@ -35,6 +38,7 @@ impl AnalyzeObjectArgs {
             modified_unix_ms: d.modified.and_then(system_time_to_unix_ms),
             media_type: d.media_type.clone(),
             extension: d.extension.clone(),
+            etag: d.etag.clone(),
         }
     }
 
@@ -48,6 +52,7 @@ impl AnalyzeObjectArgs {
             modified: self.modified_unix_ms.and_then(unix_ms_to_system_time),
             media_type: self.media_type.clone(),
             extension: self.extension.clone(),
+            etag: self.etag.clone(),
         }
     }
 
