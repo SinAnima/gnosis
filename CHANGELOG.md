@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **EXIF reader** — JPEG and TIFF yield an image entity with standard EXIF, including the extended Exif IFD and GPS. Maker notes and thumbnails are skipped. A file with no EXIF segment stays a partial image. PNG, GIF, SVG, and WebP stay inventoried.
 - **LLM vendor adapters** — chat goes through an OpenAI, Anthropic, Gemini, or Ollama adapter selected from the model id (`openai::`, `anthropic::`, `gemini::`, `ollama::` force one). Recorded replies in `fixtures/llm/recorded/` replay in tests so CI does not call a model. The parser accepts `type` as an alias of `kind`.
 - **Install channels** — Homebrew, Scoop, mise, asdf, `scripts/install.sh`, and a setup Action, scaffolded with [sastri](https://crates.io/crates/sastri). Existing CI and release workflows stay in-repo.
 - **`scripts/ci.sh`** — local run of the CI checks (fmt, Clippy, tests, coverage, deny, audit, release binary).
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **YAML parser** — documents and OKF frontmatter use `yaml-rust2` instead of archived `serde_yaml`, which depended on unmaintained `unsafe-libyaml` (`RUSTSEC-2024-0449`).
 - **`cargo audit`** — `h2` 0.4.20 (`RUSTSEC-2026-0258`), `rustls` 0.23.45 (`RUSTSEC-2026-0285`), and unyanked `chacha20` 0.10.2. `aws-sdk-s3` 1.146.1 drops unsound `lru` 0.16 (`RUSTSEC-2026-0253`).
+- **`cargo audit`** — `quinn-proto` 0.11.19 (`RUSTSEC-2026-0338`, `RUSTSEC-2026-0339`, `RUSTSEC-2026-0340`, `RUSTSEC-2026-0341`, `RUSTSEC-2026-0342`).
 - **crates.io package size** — the published crate omits the demo PDF and PNGs under `fixtures/mixed-repo/docs/`. Those files stay in git; crates.io rejects uploads over 10 MiB.
 
 ## [0.3.0] - 2026-10-11

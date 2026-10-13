@@ -7,9 +7,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
 
-**Gnosis compiles what you have into what you know.**
+**Gnosis compiles what you have into an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundle.**
 
-Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation site. It reads the files and pages there — source code, Markdown, HTML, and data files such as JSON, YAML, TOML, and CSV — and writes down the structure it can see: modules, functions, types, imports, headings, links, and columns. Watch that happen in the terminal, or run it from a script and keep the result as a folder of Markdown. The next run reads again only the files and pages that changed.
+Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation site. It reads the files and pages there and writes what it can see — modules, functions, types, imports, headings, links, columns, and image metadata — as Markdown with YAML frontmatter. That folder is `knowledge.okf/`. Watch the scan in the terminal, or run it from a script and keep the bundle. The next run reads again only the files and pages that changed.
 
 <img width="600" alt="Gnosis scan in the terminal" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
 
@@ -24,6 +24,7 @@ Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation s
   - [crates.io](#cratesio)
 - [Quick start](#quick-start)
 - [Using Gnosis](#using-gnosis)
+  - [The OKF bundle](#the-okf-bundle)
   - [Commands](#commands)
   - [Scan options](#scan-options)
     - [Every scan](#every-scan)
@@ -121,7 +122,7 @@ Scan the project you are in. The terminal UI updates as files are read:
 gnosis scan .
 ```
 
-Write the result to `knowledge.okf/` inside that folder and print a summary. This is the form to use in a script:
+Write the OKF bundle to `knowledge.okf/` inside that folder and print a summary. This is the form to use in a script:
 
 ```sh
 gnosis scan . --no-tui --export
@@ -146,7 +147,9 @@ A scan walks a folder or lists an S3 prefix. It skips `target`, `node_modules`, 
 
 Each file is classified as **understood**, **partial**, **unknown**, or **failed**. Understood files contribute entities and relationships: functions, types, modules, includes, imports, document headings, and data columns. Unknown files stay in the inventory with their path and media type, so a gap is visible.
 
-The export is a folder of Markdown with YAML frontmatter:
+### The OKF bundle
+
+The scan writes an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundle. OKF (Open Knowledge Format) is a directory of Markdown files with YAML frontmatter: one page for each object, entity, and relationship, and `index.md` as the catalog. The default path is `knowledge.okf/`.
 
 ```text
 knowledge.okf/
@@ -158,7 +161,9 @@ knowledge.okf/
 └── relationships/
 ```
 
-Browse it, commit it, or hand it to another tool. For a local scan, a relative `--output` path is created inside the scanned folder. For an S3 scan it is created in the current working directory.
+`gnosis scan . --no-tui --export` writes that folder. Browse it, commit it, or hand it to another tool. Each page's frontmatter carries confidence, the reader, and understanding status. `sidecar.json` carries the same provenance for the whole bundle.
+
+For a local scan, a relative `--output` path is created inside the scanned folder. For an S3 or web scan it is created in the current working directory.
 
 Gnosis remembers the result in `.gnosis/knowledge.redb`, next to the directory where you ran the command. The job queue, used to resume a scan that was interrupted, lives in `.gnosis/jobs.redb`. `gnosis jobs purge` removes old jobs and leaves the knowledge file alone.
 
@@ -290,7 +295,7 @@ gnosis scan . --llm claude-haiku-4-5-20251001 --llm-mode always
 gnosis scan . --llm tinyllama:latest --no-tui
 ```
 
-`fallback` asks the model about images, PDFs, and files no built-in reader claims. `always` also asks about leftover text, and the built-in code, Markdown, and data readers still win when they understand the file.
+`fallback` asks the model about images, PDFs, and files no built-in reader claims. `always` also asks about leftover text, and the built-in code, Markdown, data, and JPEG/TIFF readers still win when they understand the file.
 
 The model name selects the service: OpenAI (`gpt-…`, `OPENAI_API_KEY`), Anthropic (`claude-…`, `ANTHROPIC_API_KEY`), Gemini (`gemini-…`, `GEMINI_API_KEY`), or Ollama for anything else, including `tinyllama:latest`. Prefix the name with `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
 
@@ -307,7 +312,7 @@ Identical file contents, model, and prompt reuse `.gnosis/llm-cache` and skip th
 
 ### What Gnosis reads today
 
-Gnosis scans three kinds of sources, and it only understands a fixed set of those objects. Anything else is kept in the inventory with a path and a file-type guess.
+Gnosis scans three kinds of sources. A built-in reader turns a matching file into pages in the OKF bundle. Anything else is kept in the inventory with a path and a file-type guess.
 
 **Where a scan looks**
 
@@ -331,10 +336,11 @@ Each object is capped by `--max-size` (2 MiB by default).
 | YAML | `.yaml`, `.yml` | Document structure and key paths |
 | TOML | `.toml` | Document structure and key paths |
 | CSV and TSV | `.csv`, `.tsv` | A dataset and its columns |
+| JPEG and TIFF | `.jpg`, `.jpeg`, `.tif`, `.tiff`, or `image/jpeg`, `image/tiff` | EXIF: camera make and model, the original date, orientation, exposure, and GPS when the file has them |
 
 **Scanned, then left as unknown or partial**
 
-CSS, JavaScript, images, and fonts are recorded and not read as text. PDFs, other images, and binaries are inventoried with a guess such as `pdf-provider` or `image-provider`. They are not parsed.
+CSS, JavaScript, and fonts are recorded and not read as text. PNG, GIF, SVG, and WebP stay in the inventory with a guess such as `image-provider`. PDFs and other binaries are inventoried the same way.
 
 **Optional model**
 
@@ -737,7 +743,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 - Model reading is opt-in (`--features llm` and `--llm`). Model claims stay inferences until accepted. There is no vector index
 - Tree-sitter follows syntax. It is not a substitute for a compiler or type checker
 - Git metadata comes from the `git` command during folder scans
-- The Markdown bundle is written by Gnosis. It follows the shape of an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.1 bundle and adds `sidecar.json` for fields that frontmatter cannot carry
+- The bundle follows [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) v0.1. `sidecar.json` carries confidence, the reader, and status next to the frontmatter
 - Configuration is command-line flags. There is no `gnosis.toml` yet
 
 ## Roadmap

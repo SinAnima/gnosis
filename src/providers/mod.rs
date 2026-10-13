@@ -15,6 +15,7 @@ mod code;
 mod data;
 mod docs;
 mod generic;
+mod image;
 #[cfg(feature = "llm")]
 mod llm;
 mod util;
@@ -23,6 +24,7 @@ pub use code::{CppProvider, ElixirProvider, RustProvider};
 pub use data::{CsvProvider, JsonProvider, TomlProvider, YamlProvider};
 pub use docs::{HtmlProvider, MarkdownProvider, PlainTextProvider};
 pub use generic::GenericMetadataProvider;
+pub use image::ExifProvider;
 #[cfg(feature = "llm")]
 pub use llm::{
     parse_llm_json, strip_json_fence, AnthropicAdapter, GeminiAdapter, LlmCompletion,
@@ -60,6 +62,7 @@ pub fn build_registry(
     registry.register(Box::new(ElixirProvider));
     registry.register(Box::new(MarkdownProvider));
     registry.register(Box::new(HtmlProvider));
+    registry.register(Box::new(ExifProvider));
 
     #[cfg(feature = "llm")]
     if let Some(cfg) = llm {

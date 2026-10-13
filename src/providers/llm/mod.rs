@@ -85,7 +85,8 @@ impl LlmSemanticProvider {
             &object.extension,
             &[
                 "cpp", "cc", "cxx", "c", "h", "hpp", "hh", "rs", "ex", "exs", "md", "markdown",
-                "mdx", "txt", "text", "log", "json", "yaml", "yml", "toml", "csv",
+                "mdx", "txt", "text", "log", "json", "yaml", "yml", "toml", "csv", "jpg", "jpeg",
+                "tif", "tiff",
             ],
         )
     }
@@ -334,6 +335,14 @@ mod tests {
         assert_eq!(
             p.probe(&desc("img.png", "image/png"), &proto),
             Support::Partial
+        );
+        assert_eq!(
+            p.probe(&desc("img.jpg", "image/jpeg"), &proto),
+            Support::None
+        );
+        assert_eq!(
+            p.probe(&desc("img.tif", "image/tiff"), &proto),
+            Support::None
         );
         assert_eq!(
             p.probe(&desc("doc.pdf", "application/pdf"), &proto),

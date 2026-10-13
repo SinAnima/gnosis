@@ -54,7 +54,7 @@ pub use pipeline::{Pipeline, PipelineHandle};
 pub use prompts::{select_prompt_kind, PromptKind, PromptPack, RESPONSE_SCHEMA};
 pub use provider::{ProviderRegistry, Support, UnderstandingProvider};
 pub use providers::{
-    build_registry, default_registry, CppProvider, CsvProvider, ElixirProvider,
+    build_registry, default_registry, CppProvider, CsvProvider, ElixirProvider, ExifProvider,
     GenericMetadataProvider, HtmlProvider, JsonProvider, MarkdownProvider, PlainTextProvider,
     RustProvider, TomlProvider, YamlProvider,
 };

@@ -41,6 +41,7 @@ clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5"
 crossterm = "0.29"
 csv = "1"
+exif = { package = "kamadak-exif", version = "0.6" }
 genai = { version = "0.5.3", optional = true }
 ignore = "0.4"
 mime_guess = "2"
