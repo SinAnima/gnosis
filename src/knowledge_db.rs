@@ -229,6 +229,20 @@ impl KnowledgeDb {
                 std::fs::create_dir_all(parent)?;
             }
         }
+        let store = Self::open_at(path)?;
+        if !store.legacy_backup_needed()? {
+            return Ok(store);
+        }
+        // redb locks the whole file. Windows refuses to copy it until that lock is gone.
+        drop(store);
+        let backup = path.with_extension("redb.bak");
+        if !backup.exists() {
+            copy_unlocked(path, &backup)?;
+        }
+        Self::open_at(path)
+    }
+
+    fn open_at(path: &Path) -> Result<Self> {
         let db = Database::create(path).map_err(|e| {
             GnosisError::Pipeline(format!("open knowledge db {}: {e}", path.display()))
         })?;
@@ -240,7 +254,37 @@ impl KnowledgeDb {
         store.init_schema()?;
         Ok(store)
     }
+}
 
+fn copy_unlocked(from: &Path, to: &Path) -> Result<()> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        match std::fs::copy(from, to) {
+            Ok(_) => return Ok(()),
+            Err(err) if matches!(err.raw_os_error(), Some(32 | 33)) => {
+                last_error = Some(err);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(err) => {
+                return Err(GnosisError::Pipeline(format!(
+                    "backup {} to {}: {err}",
+                    from.display(),
+                    to.display()
+                )));
+            }
+        }
+    }
+    Err(GnosisError::Pipeline(format!(
+        "backup {} to {}: {}",
+        from.display(),
+        to.display(),
+        last_error
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "locked".into())
+    )))
+}
+
+impl KnowledgeDb {
     pub fn in_memory() -> Result<Self> {
         let db = Database::builder()
             .create_with_backend(redb::backends::InMemoryBackend::new())
@@ -299,25 +343,23 @@ impl KnowledgeDb {
         Ok(())
     }
 
-    /// Copy a populated pre-v0.5 database beside itself before the first new write.
+    /// A populated database from before the evidence schema needs a closed-file copy.
+    fn legacy_backup_needed(&self) -> Result<bool> {
+        if self.path.is_none() {
+            return Ok(false);
+        }
+        if self.meta_value(META_SCHEMA)?.as_deref() == Some(EVIDENCE_SCHEMA) {
+            return Ok(false);
+        }
+        Ok(self.object_count()? > 0)
+    }
+
+    /// Record the evidence schema. The file copy happens in `open`, after the
+    /// database lock is released, so Windows can read the bytes.
     /// A decode failure in `get` returns an error and does not replace the file.
     fn ensure_evidence_schema(&self) -> Result<()> {
         if self.meta_value(META_SCHEMA)?.as_deref() == Some(EVIDENCE_SCHEMA) {
             return Ok(());
-        }
-        if self.object_count()? > 0 {
-            if let Some(path) = &self.path {
-                let backup = path.with_extension("redb.bak");
-                if !backup.exists() {
-                    std::fs::copy(path, &backup).map_err(|err| {
-                        GnosisError::Pipeline(format!(
-                            "backup {} to {}: {err}",
-                            path.display(),
-                            backup.display()
-                        ))
-                    })?;
-                }
-            }
         }
         self.write_meta(META_SCHEMA, EVIDENCE_SCHEMA.as_bytes())
     }
