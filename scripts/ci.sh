@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local checks that mirror .github/workflows/ci.yml
-# (fmt, clippy, test, coverage, audit/deny, release binary).
+# (fmt, clippy, test, coverage, audit/deny).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,9 +42,6 @@ else
   echo ""
   echo "==> cargo audit (skipped — install with: cargo install cargo-audit)"
 fi
-
-run cargo build --release
-run ./target/release/gnosis about
 
 echo ""
 echo "All CI checks passed."

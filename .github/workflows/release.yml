@@ -67,6 +67,11 @@ jobs:
 
       - run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Verify binary
+        if: matrix.platform != 'macos-x86_64'
+        shell: bash
+        run: "target/${{ matrix.target }}/release/${{ matrix.bin }}" about
+
       - name: Package (Unix)
         if: matrix.archive == 'tar.gz'
         shell: bash
@@ -153,4 +158,5 @@ jobs:
 
           VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
           echo "Publishing gnosis ${VERSION}"
+          cargo publish --dry-run
           cargo publish
