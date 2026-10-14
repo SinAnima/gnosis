@@ -20,7 +20,10 @@ mod image;
 mod llm;
 mod util;
 
-pub use code::{CppProvider, ElixirProvider, RustProvider};
+pub use code::{
+    CSharpProvider, CppProvider, ElixirProvider, JavaProvider, JavaScriptProvider, PythonProvider,
+    RustProvider, TypeScriptProvider,
+};
 pub use data::{CsvProvider, JsonProvider, TomlProvider, YamlProvider};
 pub use docs::{HtmlProvider, MarkdownProvider, PlainTextProvider};
 pub use generic::GenericMetadataProvider;
@@ -60,6 +63,11 @@ pub fn build_registry(
     registry.register(Box::new(CppProvider));
     registry.register(Box::new(RustProvider));
     registry.register(Box::new(ElixirProvider));
+    registry.register(Box::new(JavaScriptProvider));
+    registry.register(Box::new(TypeScriptProvider));
+    registry.register(Box::new(PythonProvider));
+    registry.register(Box::new(JavaProvider));
+    registry.register(Box::new(CSharpProvider));
     registry.register(Box::new(MarkdownProvider));
     registry.register(Box::new(HtmlProvider));
     registry.register(Box::new(ExifProvider));

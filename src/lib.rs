@@ -10,6 +10,7 @@ pub mod error;
 pub mod events;
 pub mod exporter;
 pub mod ids;
+pub mod intrinsic;
 pub mod jobs;
 pub mod knowledge;
 pub mod knowledge_db;
@@ -54,9 +55,10 @@ pub use pipeline::{Pipeline, PipelineHandle};
 pub use prompts::{select_prompt_kind, PromptKind, PromptPack, RESPONSE_SCHEMA};
 pub use provider::{ProviderRegistry, Support, UnderstandingProvider};
 pub use providers::{
-    build_registry, default_registry, CppProvider, CsvProvider, ElixirProvider, ExifProvider,
-    GenericMetadataProvider, HtmlProvider, JsonProvider, MarkdownProvider, PlainTextProvider,
-    RustProvider, TomlProvider, YamlProvider,
+    build_registry, default_registry, CSharpProvider, CppProvider, CsvProvider, ElixirProvider,
+    ExifProvider, GenericMetadataProvider, HtmlProvider, JavaProvider, JavaScriptProvider,
+    JsonProvider, MarkdownProvider, PlainTextProvider, PythonProvider, RustProvider, TomlProvider,
+    TypeScriptProvider, YamlProvider,
 };
 #[cfg(feature = "llm")]
 pub use providers::{

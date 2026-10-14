@@ -1,6 +1,6 @@
 # ADR 0001 — Metadata-first compilation
 
-**Status:** Accepted for the v1 line. Not implemented in v0.4.2.
+**Status:** Accepted. Implemented in v0.5.0 for signature and EXIF facts. PNG, Office, and PDF readers are still open.
 
 ## Context
 

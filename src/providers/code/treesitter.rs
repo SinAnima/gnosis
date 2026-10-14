@@ -9,6 +9,11 @@ use tree_sitter::{Node, Parser};
 pub struct CppProvider;
 pub struct RustProvider;
 pub struct ElixirProvider;
+pub struct JavaScriptProvider;
+pub struct TypeScriptProvider;
+pub struct PythonProvider;
+pub struct JavaProvider;
+pub struct CSharpProvider;
 
 impl UnderstandingProvider for CppProvider {
     fn id(&self) -> ProviderId {
@@ -100,11 +105,166 @@ impl UnderstandingProvider for ElixirProvider {
     }
 }
 
+impl UnderstandingProvider for JavaScriptProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("tree-sitter-javascript")
+    }
+
+    fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
+        if ext_is(&object.extension, &["js", "mjs", "cjs"]) {
+            Support::Full
+        } else {
+            Support::None
+        }
+    }
+
+    fn analyze(
+        &self,
+        object: &ObjectDescriptor,
+        _proto: &ProtoData,
+        content: &mut dyn ContentReader,
+    ) -> Result<AnalysisResult> {
+        analyze_language(
+            self.id(),
+            object,
+            content,
+            tree_sitter_javascript::LANGUAGE.into(),
+            LanguageKind::JavaScript,
+        )
+    }
+}
+
+impl UnderstandingProvider for TypeScriptProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("tree-sitter-typescript")
+    }
+
+    fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
+        if ext_is(&object.extension, &["ts", "tsx", "mts", "cts"]) {
+            Support::Full
+        } else {
+            Support::None
+        }
+    }
+
+    fn analyze(
+        &self,
+        object: &ObjectDescriptor,
+        _proto: &ProtoData,
+        content: &mut dyn ContentReader,
+    ) -> Result<AnalysisResult> {
+        let language = if object.extension.as_deref() == Some("tsx") {
+            tree_sitter_typescript::LANGUAGE_TSX.into()
+        } else {
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+        };
+        analyze_language(
+            self.id(),
+            object,
+            content,
+            language,
+            LanguageKind::TypeScript,
+        )
+    }
+}
+
+impl UnderstandingProvider for PythonProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("tree-sitter-python")
+    }
+
+    fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
+        if ext_is(&object.extension, &["py"]) {
+            Support::Full
+        } else {
+            Support::None
+        }
+    }
+
+    fn analyze(
+        &self,
+        object: &ObjectDescriptor,
+        _proto: &ProtoData,
+        content: &mut dyn ContentReader,
+    ) -> Result<AnalysisResult> {
+        analyze_language(
+            self.id(),
+            object,
+            content,
+            tree_sitter_python::LANGUAGE.into(),
+            LanguageKind::Python,
+        )
+    }
+}
+
+impl UnderstandingProvider for JavaProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("tree-sitter-java")
+    }
+
+    fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
+        if ext_is(&object.extension, &["java"]) {
+            Support::Full
+        } else {
+            Support::None
+        }
+    }
+
+    fn analyze(
+        &self,
+        object: &ObjectDescriptor,
+        _proto: &ProtoData,
+        content: &mut dyn ContentReader,
+    ) -> Result<AnalysisResult> {
+        analyze_language(
+            self.id(),
+            object,
+            content,
+            tree_sitter_java::LANGUAGE.into(),
+            LanguageKind::Java,
+        )
+    }
+}
+
+impl UnderstandingProvider for CSharpProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("tree-sitter-csharp")
+    }
+
+    fn probe(&self, object: &ObjectDescriptor, _proto: &ProtoData) -> Support {
+        if ext_is(&object.extension, &["cs"]) {
+            Support::Full
+        } else {
+            Support::None
+        }
+    }
+
+    fn analyze(
+        &self,
+        object: &ObjectDescriptor,
+        _proto: &ProtoData,
+        content: &mut dyn ContentReader,
+    ) -> Result<AnalysisResult> {
+        analyze_language(
+            self.id(),
+            object,
+            content,
+            tree_sitter_c_sharp::LANGUAGE.into(),
+            LanguageKind::CSharp,
+        )
+    }
+}
+
 #[derive(Clone, Copy)]
 enum LanguageKind {
     Cpp,
     Rust,
     Elixir,
+    JavaScript,
+    TypeScript,
+    Python,
+    Java,
+    CSharp,
 }
 
 fn analyze_language(
@@ -184,6 +344,11 @@ fn language_name(kind: LanguageKind) -> &'static str {
         LanguageKind::Cpp => "cpp",
         LanguageKind::Rust => "rust",
         LanguageKind::Elixir => "elixir",
+        LanguageKind::JavaScript => "javascript",
+        LanguageKind::TypeScript => "typescript",
+        LanguageKind::Python => "python",
+        LanguageKind::Java => "java",
+        LanguageKind::CSharp => "csharp",
     }
 }
 
@@ -217,6 +382,43 @@ fn walk(
             relationships,
         ),
         LanguageKind::Elixir => extract_elixir(
+            node,
+            source,
+            provider,
+            object,
+            file_entity,
+            entities,
+            relationships,
+        ),
+        LanguageKind::JavaScript | LanguageKind::TypeScript => extract_script(
+            node,
+            source,
+            provider,
+            object,
+            kind,
+            file_entity,
+            entities,
+            relationships,
+        ),
+        LanguageKind::Python => extract_python(
+            node,
+            source,
+            provider,
+            object,
+            file_entity,
+            entities,
+            relationships,
+        ),
+        LanguageKind::Java => extract_java(
+            node,
+            source,
+            provider,
+            object,
+            file_entity,
+            entities,
+            relationships,
+        ),
+        LanguageKind::CSharp => extract_csharp(
             node,
             source,
             provider,
@@ -788,5 +990,473 @@ fn extract_elixir(
             }
         }
         _ => {}
+    }
+}
+
+fn push_named(
+    kind: &str,
+    name: &str,
+    language: &str,
+    source: &str,
+    node: Node,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    if name.is_empty() {
+        return;
+    }
+    let path = &object.relative_path;
+    let line = line_of(source, node.start_byte());
+    let named = entity(
+        kind,
+        name,
+        path,
+        &object.id,
+        provider,
+        line,
+        attrs(&[("language", language)]),
+        Confidence::High,
+    );
+    relationships.push(relationship(
+        "defines",
+        &file_entity.id,
+        &named.id,
+        provider,
+        path,
+        line,
+        Confidence::High,
+    ));
+    entities.push(named);
+}
+
+fn push_import(
+    text: &str,
+    language: &str,
+    source: &str,
+    node: Node,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    let name = text
+        .split_whitespace()
+        .take(8)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if name.is_empty() {
+        return;
+    }
+    let path = &object.relative_path;
+    let line = line_of(source, node.start_byte());
+    let target = entity(
+        "module",
+        &name,
+        path,
+        &object.id,
+        provider,
+        line,
+        attrs(&[("language", language)]),
+        Confidence::Medium,
+    );
+    relationships.push(relationship(
+        "imports",
+        &file_entity.id,
+        &target.id,
+        provider,
+        path,
+        line,
+        Confidence::Medium,
+    ));
+    entities.push(target);
+}
+
+fn extract_script(
+    node: Node,
+    source: &str,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    kind: LanguageKind,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    let language = language_name(kind);
+    match node.kind() {
+        "function_declaration" | "generator_function_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "function",
+                    node_text(name_node, source),
+                    language,
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "method_definition" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "method",
+                    node_text(name_node, source),
+                    language,
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "class_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "class",
+                    node_text(name_node, source),
+                    language,
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "interface_declaration" | "type_alias_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                let entity_kind = if node.kind() == "interface_declaration" {
+                    "interface"
+                } else {
+                    "type"
+                };
+                push_named(
+                    entity_kind,
+                    node_text(name_node, source),
+                    language,
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "import_statement" => {
+            push_import(
+                node_text(node, source),
+                language,
+                source,
+                node,
+                provider,
+                object,
+                file_entity,
+                entities,
+                relationships,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn extract_python(
+    node: Node,
+    source: &str,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    match node.kind() {
+        "function_definition" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "function",
+                    node_text(name_node, source),
+                    "python",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "class_definition" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "class",
+                    node_text(name_node, source),
+                    "python",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "import_statement" | "import_from_statement" => {
+            push_import(
+                node_text(node, source),
+                "python",
+                source,
+                node,
+                provider,
+                object,
+                file_entity,
+                entities,
+                relationships,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn extract_java(
+    node: Node,
+    source: &str,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    match node.kind() {
+        "method_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "method",
+                    node_text(name_node, source),
+                    "java",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "class_declaration" | "interface_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                let kind = if node.kind() == "class_declaration" {
+                    "class"
+                } else {
+                    "interface"
+                };
+                push_named(
+                    kind,
+                    node_text(name_node, source),
+                    "java",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "import_declaration" => {
+            push_import(
+                node_text(node, source),
+                "java",
+                source,
+                node,
+                provider,
+                object,
+                file_entity,
+                entities,
+                relationships,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn extract_csharp(
+    node: Node,
+    source: &str,
+    provider: &ProviderId,
+    object: &ObjectDescriptor,
+    file_entity: &Entity,
+    entities: &mut Vec<Entity>,
+    relationships: &mut Vec<Relationship>,
+) {
+    match node.kind() {
+        "method_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                push_named(
+                    "method",
+                    node_text(name_node, source),
+                    "csharp",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "class_declaration" | "interface_declaration" => {
+            if let Some(name_node) = child_by_field(node, "name") {
+                let kind = if node.kind() == "class_declaration" {
+                    "class"
+                } else {
+                    "interface"
+                };
+                push_named(
+                    kind,
+                    node_text(name_node, source),
+                    "csharp",
+                    source,
+                    node,
+                    provider,
+                    object,
+                    file_entity,
+                    entities,
+                    relationships,
+                );
+            }
+        }
+        "using_directive" => {
+            push_import(
+                node_text(node, source),
+                "csharp",
+                source,
+                node,
+                provider,
+                object,
+                file_entity,
+                entities,
+                relationships,
+            );
+        }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+    use crate::ids::ObjectId;
+    use std::path::PathBuf;
+
+    fn object(rel: &str) -> ObjectDescriptor {
+        let path = PathBuf::from(rel);
+        ObjectDescriptor {
+            id: ObjectId::new(format!("obj:{rel}")),
+            path: path.clone(),
+            relative_path: path.clone(),
+            is_dir: false,
+            size: 32,
+            modified: None,
+            media_type: "text/plain".into(),
+            extension: path
+                .extension()
+                .map(|ext| ext.to_string_lossy().to_string()),
+            etag: None,
+        }
+    }
+
+    fn names(
+        provider: &dyn UnderstandingProvider,
+        rel: &str,
+        source: &str,
+    ) -> Vec<(String, String)> {
+        let object = object(rel);
+        let proto = ProtoData::default();
+        let mut reader = crate::BytesContentReader::new(source.as_bytes().to_vec());
+        let result = provider.analyze(&object, &proto, &mut reader).unwrap();
+        result
+            .record
+            .entities
+            .into_iter()
+            .map(|entity| (entity.kind, entity.name))
+            .collect()
+    }
+
+    #[test]
+    fn javascript_typescript_python_java_and_csharp_extract_symbols() {
+        let js = names(
+            &JavaScriptProvider,
+            "app.js",
+            "import ledger from './ledger.js';\nfunction price(x) { return x; }\nclass Quote {}\n",
+        );
+        assert!(js
+            .iter()
+            .any(|(kind, name)| kind == "function" && name == "price"));
+        assert!(js
+            .iter()
+            .any(|(kind, name)| kind == "class" && name == "Quote"));
+
+        let ts = names(
+            &TypeScriptProvider,
+            "app.ts",
+            "export function price(x: number) { return x; }\nexport class Quote {}\n",
+        );
+        assert!(ts
+            .iter()
+            .any(|(kind, name)| kind == "function" && name == "price"));
+
+        let py = names(
+            &PythonProvider,
+            "price.py",
+            "import ledger\n\ndef price(x):\n    return x\n\nclass Quote:\n    pass\n",
+        );
+        assert!(py
+            .iter()
+            .any(|(kind, name)| kind == "function" && name == "price"));
+        assert!(py
+            .iter()
+            .any(|(kind, name)| kind == "class" && name == "Quote"));
+
+        let java = names(
+            &JavaProvider,
+            "Quote.java",
+            "import ledger.Entry;\nclass Quote { int price(int x) { return x; } }\n",
+        );
+        assert!(java
+            .iter()
+            .any(|(kind, name)| kind == "class" && name == "Quote"));
+        assert!(java
+            .iter()
+            .any(|(kind, name)| kind == "method" && name == "price"));
+
+        let cs = names(
+            &CSharpProvider,
+            "Quote.cs",
+            "using Ledger;\nclass Quote { int Price(int x) { return x; } }\n",
+        );
+        assert!(cs
+            .iter()
+            .any(|(kind, name)| kind == "class" && name == "Quote"));
+        assert!(cs
+            .iter()
+            .any(|(kind, name)| kind == "method" && name == "Price"));
     }
 }

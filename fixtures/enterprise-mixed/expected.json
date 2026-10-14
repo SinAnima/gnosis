@@ -66,6 +66,34 @@
     {
       "entities": [
         {
+          "kind": "class",
+          "name": "Quote"
+        },
+        {
+          "kind": "method",
+          "name": "Price"
+        },
+        {
+          "kind": "module",
+          "name": "Quote"
+        },
+        {
+          "kind": "module",
+          "name": "using Ledger;"
+        }
+      ],
+      "path": "csharp/Quote.cs",
+      "provider": "tree-sitter-csharp",
+      "relationships": [
+        "defines",
+        "defines",
+        "imports"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
           "kind": "column",
           "name": "amount"
         },
@@ -161,7 +189,7 @@
       "path": "images/camera.jpg",
       "provider": "exif",
       "relationships": [],
-      "status": "understood"
+      "status": "partial"
     },
     {
       "entities": [
@@ -185,6 +213,62 @@
       "path": "images/scan.tif",
       "provider": "exif",
       "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "class",
+          "name": "Quote"
+        },
+        {
+          "kind": "method",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "Quote"
+        },
+        {
+          "kind": "module",
+          "name": "import ledger.Entry;"
+        }
+      ],
+      "path": "java/Quote.java",
+      "provider": "tree-sitter-java",
+      "relationships": [
+        "defines",
+        "defines",
+        "imports"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "class",
+          "name": "Quote"
+        },
+        {
+          "kind": "function",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "import ledger from './ledger.js';"
+        },
+        {
+          "kind": "module",
+          "name": "price"
+        }
+      ],
+      "path": "js/price.js",
+      "provider": "tree-sitter-javascript",
+      "relationships": [
+        "defines",
+        "defines",
+        "imports"
+      ],
       "status": "understood"
     },
     {
@@ -250,6 +334,34 @@
     {
       "entities": [
         {
+          "kind": "class",
+          "name": "Quote"
+        },
+        {
+          "kind": "function",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "import ledger"
+        },
+        {
+          "kind": "module",
+          "name": "price"
+        }
+      ],
+      "path": "python/price.py",
+      "provider": "tree-sitter-python",
+      "relationships": [
+        "defines",
+        "defines",
+        "imports"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
           "kind": "function",
           "name": "price"
         },
@@ -279,6 +391,29 @@
       "path": "src/quote.rs",
       "provider": "tree-sitter-rust",
       "relationships": [
+        "defines"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "class",
+          "name": "Quote"
+        },
+        {
+          "kind": "function",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "price"
+        }
+      ],
+      "path": "ts/price.ts",
+      "provider": "tree-sitter-typescript",
+      "relationships": [
+        "defines",
         "defines"
       ],
       "status": "understood"
