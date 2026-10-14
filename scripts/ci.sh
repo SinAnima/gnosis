@@ -15,6 +15,9 @@ run() {
 run cargo fmt --all -- --check
 run cargo clippy --all-targets --all-features -- -D warnings
 run cargo test --all-targets
+run cargo test --all-targets --all-features
+run cargo test --no-default-features
+run cargo doc --no-deps
 
 echo ""
 echo "==> cargo llvm-cov (CI gate: ≥80% lines)"

@@ -1,0 +1,287 @@
+{
+  "objects": [
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "broken.zip"
+        }
+      ],
+      "path": "archives/broken.zip",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "function",
+          "name": "apply"
+        },
+        {
+          "kind": "module",
+          "name": "rule"
+        },
+        {
+          "kind": "module",
+          "name": "rule.hpp"
+        },
+        {
+          "kind": "namespace",
+          "name": "ledger"
+        }
+      ],
+      "path": "cpp/rule.cpp",
+      "provider": "tree-sitter-cpp",
+      "relationships": [
+        "defines",
+        "defines",
+        "includes"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "function",
+          "name": "apply"
+        },
+        {
+          "kind": "module",
+          "name": "rule"
+        },
+        {
+          "kind": "namespace",
+          "name": "ledger"
+        }
+      ],
+      "path": "cpp/rule.hpp",
+      "provider": "tree-sitter-cpp",
+      "relationships": [
+        "defines",
+        "defines"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "column",
+          "name": "amount"
+        },
+        {
+          "kind": "column",
+          "name": "sku"
+        },
+        {
+          "kind": "dataset",
+          "name": "prices"
+        },
+        {
+          "kind": "sample",
+          "name": "preview"
+        }
+      ],
+      "path": "data/prices.csv",
+      "provider": "csv",
+      "relationships": [
+        "has_column",
+        "has_column"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "document",
+          "name": "prices"
+        },
+        {
+          "kind": "key_path",
+          "name": "amount"
+        },
+        {
+          "kind": "key_path",
+          "name": "sku"
+        }
+      ],
+      "path": "data/prices.json",
+      "provider": "json",
+      "relationships": [],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "document",
+          "name": "Overview"
+        },
+        {
+          "kind": "section",
+          "name": "Overview"
+        }
+      ],
+      "path": "docs/overview.md",
+      "provider": "markdown",
+      "relationships": [
+        "contains"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "function",
+          "name": "post"
+        },
+        {
+          "kind": "module",
+          "name": "Ledger.Entry"
+        },
+        {
+          "kind": "module",
+          "name": "entry"
+        }
+      ],
+      "path": "elixir/entry.ex",
+      "provider": "tree-sitter-elixir",
+      "relationships": [
+        "defines",
+        "defines"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "image",
+          "name": "camera.jpg"
+        }
+      ],
+      "path": "images/camera.jpg",
+      "provider": "exif",
+      "relationships": [],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "caption.png"
+        }
+      ],
+      "path": "images/caption.png",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "unknown"
+    },
+    {
+      "entities": [
+        {
+          "kind": "image",
+          "name": "scan.tif"
+        }
+      ],
+      "path": "images/scan.tif",
+      "provider": "exif",
+      "relationships": [],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "book.xlsx"
+        }
+      ],
+      "path": "office/book.xlsx",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "brief.docx"
+        }
+      ],
+      "path": "office/brief.docx",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "deck.pptx"
+        }
+      ],
+      "path": "office/deck.pptx",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "note.pdf"
+        }
+      ],
+      "path": "office/note.pdf",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "widget.bin"
+        }
+      ],
+      "path": "proprietary/widget.bin",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "unknown"
+    },
+    {
+      "entities": [
+        {
+          "kind": "function",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "pricing"
+        }
+      ],
+      "path": "src/pricing.rs",
+      "provider": "tree-sitter-rust",
+      "relationships": [
+        "defines"
+      ],
+      "status": "understood"
+    },
+    {
+      "entities": [
+        {
+          "kind": "function",
+          "name": "price"
+        },
+        {
+          "kind": "module",
+          "name": "quote"
+        }
+      ],
+      "path": "src/quote.rs",
+      "provider": "tree-sitter-rust",
+      "relationships": [
+        "defines"
+      ],
+      "status": "understood"
+    }
+  ]
+}
