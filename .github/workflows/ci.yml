@@ -45,6 +45,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-targets
 
+  baseline:
+    name: Baseline matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-targets --all-features
+      - run: cargo test --no-default-features
+      - run: cargo doc --no-deps
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

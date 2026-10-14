@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-10-12
+
+### Added
+
+- **Baseline harness** — `fixtures/enterprise-mixed/` is a synthetic tree (code, Markdown, JSON, CSV, JPEG/TIFF EXIF, a PNG with text, minimal DOCX/XLSX/PPTX/PDF, a truncated zip, and an unknown binary). `tests/enterprise_mixed.rs` checks the scan against `expected.json`, checks that a second scan skips unmodified files, and on Unix checks that a symlink cycle is not walked. PNG, Office, PDF, the archive, and the binary stay expected gaps.
+- **Baseline record** — `docs/reviews/v1-baseline.md` is the command matrix, the gap matrix, and the OKF v0.1 differences. `docs/adr/0001-metadata-first-compilation.md` records metadata as its own stage. This release does not change the pipeline.
+
 ## [0.4.1] - 2026-10-12
 
 ### Changed
@@ -107,7 +114,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/SinAnima/gnosis/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SinAnima/gnosis/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SinAnima/gnosis/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SinAnima/gnosis/compare/v0.2.0...v0.3.0

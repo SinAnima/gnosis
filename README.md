@@ -748,7 +748,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published.
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published. 0.4.2, in this tree, is the baseline harness described in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -756,6 +756,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.2.0 | Assisted understanding | Optional model reading that does not replace deterministic facts |
 | 0.3.0 | Recompile, do not rescan | A saved knowledge file, incremental scans, `gnosis diff`, and filesystem watch |
 | 0.4.0 | Web ingestion | A bounded `https://` crawl in the same pipeline |
+| 0.4.2 | Baseline | A regression harness and a written gap matrix. No new readers |
 | 0.5.0 | Understand more | Deeper C++, Rust, and Elixir reading; documentation linked to code; evidence and confidence you can inspect; coverage by path, file type, and reader |
 | 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
 | 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
