@@ -1,8 +1,8 @@
 name: CI
 
+# Pull requests only. Merging to main is the same commit the pull request
+# already checked, so a push trigger would run this workflow a second time.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -97,31 +97,3 @@ jobs:
       - run: cargo audit
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
-
-  build-release:
-    name: Release build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release
-      - name: Verify binary (Unix)
-        if: runner.os != 'Windows'
-        run: ./target/release/gnosis about
-      - name: Verify binary (Windows)
-        if: runner.os == 'Windows'
-        run: ./target/release/gnosis.exe about
-
-  publish-check:
-    name: Crates.io dry-run
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo publish --dry-run --allow-dirty

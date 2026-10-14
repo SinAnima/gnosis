@@ -17,7 +17,7 @@ cd gnosis
 ./scripts/ci.sh
 ```
 
-`scripts/ci.sh` is the local copy of CI: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, `cargo audit` when it is installed, and a release build that runs `gnosis about`.
+`scripts/ci.sh` is the local copy of CI: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, and `cargo audit` when it is installed.
 
 Headless demo against the fixture:
 
@@ -70,7 +70,7 @@ See [baoulo/RELEASE.md](baoulo/RELEASE.md) if present, otherwise:
    git push origin v0.1.0
    ```
 
-6. The Release workflow builds binaries, creates a GitHub Release, and runs `cargo publish` for the single **`gnosis`** crate.
+6. The Release workflow builds binaries, runs `gnosis about`, dry-runs `cargo publish`, creates a GitHub Release, and then publishes the single **`gnosis`** crate.
 
 Manual dry-run:
 

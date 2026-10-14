@@ -646,7 +646,7 @@ Headless scan of the fixture, the same shape CI uses:
 cargo run -- scan ./fixtures/mixed-repo --no-tui --export
 ```
 
-`scripts/ci.sh` is the local copy of GitHub Actions: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, `cargo audit` when it is installed, and a release build that runs `gnosis about`.
+`scripts/ci.sh` is the local copy of GitHub Actions: format, Clippy, tests, the 80% line-coverage gate, `cargo deny`, and `cargo audit` when it is installed.
 
 ```bash
 ./scripts/ci.sh
@@ -730,8 +730,8 @@ A reader claims a file as full, partial, or none. A full claim wins over a parti
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| [ci.yml](.github/workflows/ci.yml) | push and pull request to `main` | fmt, clippy, tests on Linux, macOS, and Windows, coverage, audit, deny, release build, package check |
-| [release.yml](.github/workflows/release.yml) | `v*` tag | Binaries, GitHub Release, crates.io publish |
+| [ci.yml](.github/workflows/ci.yml) | pull request to `main` | fmt, clippy, tests on Linux, macOS, and Windows, coverage, audit, deny |
+| [release.yml](.github/workflows/release.yml) | `v*` tag | Release binaries, a crates.io dry-run, GitHub Release, crates.io publish |
 | [dependencies.yml](.github/workflows/dependencies.yml) | weekly or manual | Dependency update pull requests |
 
 Packaging formulas under [`packaging/`](packaging/) are generated with [sastri](https://crates.io/crates/sastri) (`sastri generate --force`). `Sastri.toml` keeps `ci` and `github_releases` off, so those workflows stay owned by this repo.

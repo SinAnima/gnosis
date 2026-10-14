@@ -6,10 +6,13 @@
 
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
-use gnosis::{default_registry, KnowledgeDb, MemoryJobStore, Pipeline, ScanConfig};
+use gnosis::KnowledgeDb;
+#[cfg(unix)]
+use gnosis::{default_registry, MemoryJobStore, Pipeline, ScanConfig};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::time::Duration;
 
 fn fixture_root() -> PathBuf {
