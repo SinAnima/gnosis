@@ -70,7 +70,7 @@ jobs:
       - name: Verify binary
         if: matrix.platform != 'macos-x86_64'
         shell: bash
-        run: "target/${{ matrix.target }}/release/${{ matrix.bin }}" about
+        run: target/${{ matrix.target }}/release/${{ matrix.bin }} about
 
       - name: Package (Unix)
         if: matrix.archive == 'tar.gz'
