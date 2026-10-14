@@ -329,6 +329,11 @@ Each object is capped by `--max-size` (2 MiB by default).
 | C and C++ | `.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx` | Modules, types, functions, includes, inheritance, from the syntax |
 | Rust | `.rs` | Modules, types, functions, and the relationships the syntax shows |
 | Elixir | `.ex`, `.exs` | Modules, functions, and the relationships the syntax shows |
+| JavaScript | `.js`, `.mjs`, `.cjs` | Modules, functions, classes, and imports, from the syntax |
+| TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` | Modules, functions, classes, types, and imports, from the syntax |
+| Python | `.py` | Modules, functions, classes, and imports, from the syntax |
+| Java | `.java` | Classes, methods, and imports, from the syntax |
+| C# | `.cs` | Classes, methods, and imports, from the syntax |
 | Markdown | `.md`, `.markdown`, `.mdx` | Headings and document structure |
 | HTML | `.html`, `.htm`, or `text/html` | Title, headings, description, language, canonical link, and links. No JavaScript |
 | Plain text | `.txt`, `.text`, `.log` | A document plus a short preview. Other `text/*` files get a partial reading |
@@ -336,11 +341,11 @@ Each object is capped by `--max-size` (2 MiB by default).
 | YAML | `.yaml`, `.yml` | Document structure and key paths |
 | TOML | `.toml` | Document structure and key paths |
 | CSV and TSV | `.csv`, `.tsv` | A dataset and its columns |
-| JPEG and TIFF | `.jpg`, `.jpeg`, `.tif`, `.tiff`, or `image/jpeg`, `image/tiff` | EXIF: camera make and model, the original date, orientation, exposure, and GPS when the file has them |
+| JPEG and TIFF | `.jpg`, `.jpeg`, `.tif`, `.tiff`, or `image/jpeg`, `image/tiff` | EXIF: camera make and model, the original date, orientation, exposure, and GPS when the file has them. The scan status is partial: these are metadata facts, not a reading of the picture |
 
 **Scanned, then left as unknown or partial**
 
-CSS, JavaScript, and fonts are recorded and not read as text. PNG, GIF, SVG, and WebP stay in the inventory with a guess such as `image-provider`. PDFs and other binaries are inventoried the same way.
+CSS and fonts are recorded and not read as text. PNG, GIF, SVG, and WebP stay in the inventory with a guess such as `image-provider`. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and EXIF facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read.
 
 **Optional model**
 
@@ -707,7 +712,7 @@ A reader claims a file as full, partial, or none. A full claim wins over a parti
 
 | Library | What it does here | Why this one |
 |---------|-------------------|--------------|
-| tree-sitter | Structure of C++, Rust, and Elixir | A grammar yields functions, types, and imports without running each language's compiler |
+| tree-sitter | Structure of C++, Rust, Elixir, JavaScript, TypeScript, Python, Java, and C# | A grammar yields functions, types, and imports without running each language's compiler |
 | redb | Job queue and knowledge file | An embedded database is one file, with no server to operate. Jobs and knowledge are separate files, so purging the queue cannot delete what was learned |
 | blake3 | Content fingerprint | A fast, stable hash answers "did these bytes change?" |
 | ignore | Folder walk | The same skip rules people already have in `.gitignore` |
@@ -748,7 +753,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published. 0.4.2, in this tree, is the baseline harness described in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published. 0.4.2 is the baseline harness in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md). 0.5.0, in this tree, adds intrinsic evidence and the JavaScript, TypeScript, Python, Java, and C# readers.
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -757,7 +762,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.3.0 | Recompile, do not rescan | A saved knowledge file, incremental scans, `gnosis diff`, and filesystem watch |
 | 0.4.0 | Web ingestion | A bounded `https://` crawl in the same pipeline |
 | 0.4.2 | Baseline | A regression harness and a written gap matrix. No new readers |
-| 0.5.0 | Understand more | Deeper C++, Rust, and Elixir reading; documentation linked to code; evidence and confidence you can inspect; coverage by path, file type, and reader |
+| 0.5.0 | Intrinsic evidence | `gnosis inspect`, namespaced EXIF and signature facts beside the winning reader, and Tree-sitter for JavaScript, TypeScript, Python, Java, and C# |
 | 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
 | 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |

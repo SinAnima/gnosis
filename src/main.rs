@@ -146,6 +146,17 @@ enum Commands {
         #[arg(long, default_value_t = 2 * 1024 * 1024)]
         max_size: u64,
     },
+    /// Print proto, signature, and intrinsic facts for one local file
+    Inspect {
+        /// File to inspect
+        path: PathBuf,
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+        /// Read the stored evidence record when this database already has the file
+        #[arg(long)]
+        knowledge_db: Option<PathBuf>,
+    },
     /// Show product overview
     About,
 }
@@ -352,6 +363,11 @@ fn main() -> Result<()> {
             to,
             knowledge_db,
         } => run_diff(from, to, knowledge_db),
+        Commands::Inspect {
+            path,
+            json,
+            knowledge_db,
+        } => run_inspect(&path, json, knowledge_db.as_deref()),
         Commands::Watch {
             path,
             debounce_ms,
@@ -410,6 +426,84 @@ fn run_review(command: ReviewCommands) -> Result<()> {
                 None => bail!("review target not found: {id}"),
             }
         }
+    }
+}
+
+fn run_inspect(
+    path: &std::path::Path,
+    json: bool,
+    knowledge_db: Option<&std::path::Path>,
+) -> Result<()> {
+    if let Some(db_path) = knowledge_db {
+        let db = gnosis::KnowledgeDb::open(db_path).context("open knowledge db")?;
+        let records = db.load_all().context("load knowledge")?;
+        let wanted = path.to_string_lossy().replace('\\', "/");
+        if let Some(record) = records.iter().find(|record| {
+            let rel = record
+                .object
+                .descriptor
+                .relative_path
+                .to_string_lossy()
+                .replace('\\', "/");
+            rel == wanted || wanted.ends_with(&rel) || rel.ends_with(&wanted)
+        }) {
+            let structural = Some(gnosis::intrinsic::StructuralView {
+                provider: record.provider_id.clone().unwrap_or_default(),
+                status: record.object.status,
+                entities: record
+                    .entities
+                    .iter()
+                    .map(|entity| gnosis::intrinsic::InspectEntity {
+                        kind: entity.kind.clone(),
+                        name: entity.name.clone(),
+                    })
+                    .collect(),
+            });
+            let evidence = record
+                .evidence
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("stored object has no evidence record"))?;
+            let report = gnosis::intrinsic::InspectReport {
+                evidence,
+                structural,
+                semantic: "not_attempted".into(),
+            };
+            return print_inspect(&report, json);
+        }
+    }
+    let report = gnosis::intrinsic::inspect_file(path).context("inspect file")?;
+    print_inspect(&report, json)
+}
+
+fn print_inspect(report: &gnosis::intrinsic::InspectReport, json: bool) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(report).context("encode inspect json")?
+        );
+    } else {
+        println!(
+            "status {}  semantic {}",
+            report.evidence.user_status, report.semantic
+        );
+        for fact in &report.evidence.intrinsic.facts {
+            println!("{}  {}", fact.key, fact_text(&fact.value));
+        }
+    }
+    Ok(())
+}
+
+fn fact_text(value: &gnosis::intrinsic::FactValue) -> String {
+    match value {
+        gnosis::intrinsic::FactValue::String(text)
+        | gnosis::intrinsic::FactValue::Decimal(text)
+        | gnosis::intrinsic::FactValue::Timestamp(text)
+        | gnosis::intrinsic::FactValue::Uri(text)
+        | gnosis::intrinsic::FactValue::Digest(text) => text.clone(),
+        gnosis::intrinsic::FactValue::Integer(value) => value.to_string(),
+        gnosis::intrinsic::FactValue::Bool(value) => value.to_string(),
+        gnosis::intrinsic::FactValue::Array(values) => values.join(","),
+        gnosis::intrinsic::FactValue::Null => "null".into(),
     }
 }
 

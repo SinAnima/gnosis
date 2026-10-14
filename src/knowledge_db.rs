@@ -32,6 +32,8 @@ pub enum ReanalyzeReason {
     Dependency,
     Unchanged,
     Deleted,
+    /// Content and the structural provider are unchanged. Refresh evidence only.
+    Intrinsic,
 }
 
 impl ReanalyzeReason {
@@ -43,6 +45,7 @@ impl ReanalyzeReason {
             Self::Dependency => "dependency",
             Self::Unchanged => "unchanged",
             Self::Deleted => "deleted",
+            Self::Intrinsic => "intrinsic",
         }
     }
 }
@@ -180,6 +183,12 @@ pub struct PersistedObject {
     pub etag: Option<String>,
     pub deps: Vec<String>,
     pub reason: ReanalyzeReason,
+    /// Intrinsic evidence. Absent on rows written before v0.5.0.
+    #[serde(default)]
+    pub evidence: Option<crate::intrinsic::ArtifactEvidenceRecord>,
+    /// Stamp of the intrinsic extractors that produced `evidence`.
+    #[serde(default)]
+    pub intrinsic_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -206,7 +215,11 @@ pub struct Snapshot {
 pub struct KnowledgeDb {
     db: Database,
     write_lock: Mutex<()>,
+    path: Option<std::path::PathBuf>,
 }
+
+const EVIDENCE_SCHEMA: &str = "2";
+const META_SCHEMA: &str = "schema_version";
 
 impl KnowledgeDb {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -222,6 +235,7 @@ impl KnowledgeDb {
         let store = Self {
             db,
             write_lock: Mutex::new(()),
+            path: Some(path.to_path_buf()),
         };
         store.init_schema()?;
         Ok(store)
@@ -234,6 +248,7 @@ impl KnowledgeDb {
         let store = Self {
             db,
             write_lock: Mutex::new(()),
+            path: None,
         };
         store.init_schema()?;
         Ok(store)
@@ -269,6 +284,7 @@ impl KnowledgeDb {
         let bytes = serde_json::to_vec(record)
             .map_err(|e| GnosisError::Pipeline(format!("encode object {id}: {e}")))?;
         let _guard = self.write_lock.lock().unwrap();
+        self.ensure_evidence_schema()?;
         let txn = self.begin_write()?;
         {
             let mut table = txn
@@ -277,6 +293,99 @@ impl KnowledgeDb {
             table
                 .insert(id.as_str(), bytes.as_slice())
                 .map_err(|e| GnosisError::Pipeline(format!("insert object {id}: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GnosisError::Pipeline(format!("knowledge db commit: {e}")))?;
+        Ok(())
+    }
+
+    /// Copy a populated pre-v0.5 database beside itself before the first new write.
+    /// A decode failure in `get` returns an error and does not replace the file.
+    fn ensure_evidence_schema(&self) -> Result<()> {
+        if self.meta_value(META_SCHEMA)?.as_deref() == Some(EVIDENCE_SCHEMA) {
+            return Ok(());
+        }
+        if self.object_count()? > 0 {
+            if let Some(path) = &self.path {
+                let backup = path.with_extension("redb.bak");
+                if !backup.exists() {
+                    std::fs::copy(path, &backup).map_err(|err| {
+                        GnosisError::Pipeline(format!(
+                            "backup {} to {}: {err}",
+                            path.display(),
+                            backup.display()
+                        ))
+                    })?;
+                }
+            }
+        }
+        self.write_meta(META_SCHEMA, EVIDENCE_SCHEMA.as_bytes())
+    }
+
+    fn object_count(&self) -> Result<u64> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GnosisError::Pipeline(format!("knowledge begin_read: {e}")))?;
+        let table = txn
+            .open_table(OBJECTS)
+            .map_err(|e| GnosisError::Pipeline(format!("open objects: {e}")))?;
+        let mut count = 0u64;
+        let iter = table
+            .iter()
+            .map_err(|e| GnosisError::Pipeline(format!("scan objects: {e}")))?;
+        for item in iter {
+            item.map_err(|e| GnosisError::Pipeline(format!("scan objects: {e}")))?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    fn meta_value(&self, key: &str) -> Result<Option<String>> {
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| GnosisError::Pipeline(format!("knowledge begin_read: {e}")))?;
+        let table = txn
+            .open_table(META)
+            .map_err(|e| GnosisError::Pipeline(format!("open knowledge meta: {e}")))?;
+        let Some(value) = table
+            .get(key)
+            .map_err(|e| GnosisError::Pipeline(format!("read knowledge meta: {e}")))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(String::from_utf8_lossy(value.value()).into_owned()))
+    }
+
+    fn write_meta(&self, key: &str, value: &[u8]) -> Result<()> {
+        let txn = self.begin_write()?;
+        {
+            let mut table = txn
+                .open_table(META)
+                .map_err(|e| GnosisError::Pipeline(format!("open knowledge meta: {e}")))?;
+            table
+                .insert(key, value)
+                .map_err(|e| GnosisError::Pipeline(format!("write knowledge meta: {e}")))?;
+        }
+        txn.commit()
+            .map_err(|e| GnosisError::Pipeline(format!("knowledge db commit: {e}")))?;
+        Ok(())
+    }
+
+    /// Insert a pre-v0.5 row without bumping the schema. Tests use this to
+    /// check that the first new write copies the file aside.
+    #[cfg(test)]
+    pub fn insert_legacy_for_test(&self, id: &str, bytes: &[u8]) -> Result<()> {
+        let _guard = self.write_lock.lock().unwrap();
+        let txn = self.begin_write()?;
+        {
+            let mut table = txn
+                .open_table(OBJECTS)
+                .map_err(|e| GnosisError::Pipeline(format!("open objects: {e}")))?;
+            table
+                .insert(id, bytes)
+                .map_err(|e| GnosisError::Pipeline(format!("insert legacy {id}: {e}")))?;
         }
         txn.commit()
             .map_err(|e| GnosisError::Pipeline(format!("knowledge db commit: {e}")))?;
@@ -640,7 +749,7 @@ impl crate::store::ReviewSink for KnowledgeDb {
 mod tests {
     use super::*;
     use crate::connectors::types::{ObjectDescriptor, ProtoData};
-    use crate::ids::{EntityId, ProviderId, RelationshipId};
+    use crate::ids::{EntityId, ObjectId, ProviderId, RelationshipId};
     use crate::knowledge::{AttributeMap, Confidence, Entity, Relationship};
     use std::path::PathBuf;
 
@@ -766,6 +875,8 @@ mod tests {
             etag: None,
             deps: vec!["a.h".into()],
             reason: ReanalyzeReason::New,
+            evidence: None,
+            intrinsic_version: None,
         };
         db.put(&record).unwrap();
         assert!(db.persist_review("ent:fn:ping@a.rs", "accepted").unwrap());
@@ -820,5 +931,63 @@ mod tests {
         assert!(text.contains("+ ent:fn:new@a.rs"));
         assert!(text.contains("- ent:fn:old@a.rs"));
         assert!(text.contains("+ b.rs"));
+    }
+
+    #[test]
+    fn legacy_row_without_evidence_loads_and_first_write_backs_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("knowledge.redb");
+        let db = KnowledgeDb::open(&path).unwrap();
+        let object_id = ObjectId::new("obj:a.rs");
+        let root = PathBuf::from(".");
+        let file = PathBuf::from("a.rs");
+        let descriptor = ObjectDescriptor::from_path(&root, &file, false, 3, None);
+        let record = PersistedObject {
+            object: StoredObject {
+                descriptor,
+                proto: ProtoData::default(),
+                status: UnderstandingStatus::Understood,
+                provider: Some(ProviderId::new("rust")),
+                classification_reason: None,
+                entity_ids: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+            entities: Vec::new(),
+            relationships: Vec::new(),
+            fingerprint: Some("abc".into()),
+            provider_id: Some("rust".into()),
+            provider_version: Some("0.1.0".into()),
+            size: 3,
+            modified_unix_ms: Some(1),
+            etag: None,
+            deps: Vec::new(),
+            reason: ReanalyzeReason::New,
+            evidence: None,
+            intrinsic_version: None,
+        };
+        let mut legacy = serde_json::to_value(&record).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.remove("evidence");
+        object.remove("intrinsic_version");
+        let bytes = serde_json::to_vec(&legacy).unwrap();
+        db.insert_legacy_for_test(object_id.as_str(), &bytes)
+            .unwrap();
+        db.insert_legacy_for_test("obj:bad", b"not-json").unwrap();
+        drop(db);
+
+        let db = KnowledgeDb::open(&path).unwrap();
+        let loaded = db.get(&object_id).unwrap().unwrap();
+        assert!(loaded.evidence.is_none());
+        assert!(loaded.intrinsic_version.is_none());
+        let err = db.get(&ObjectId::new("obj:bad")).unwrap_err();
+        assert!(err.to_string().contains("decode"));
+        assert!(path.is_file());
+        db.put(&loaded).unwrap();
+        let backup = path.with_extension("redb.bak");
+        assert!(backup.is_file(), "missing {}", backup.display());
+        let round = db.get(&object_id).unwrap().unwrap();
+        let encoded = serde_json::to_vec(&round).unwrap();
+        let decoded: PersistedObject = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.provider_id.as_deref(), Some("rust"));
     }
 }

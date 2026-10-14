@@ -84,9 +84,9 @@ impl LlmSemanticProvider {
         ext_is(
             &object.extension,
             &[
-                "cpp", "cc", "cxx", "c", "h", "hpp", "hh", "rs", "ex", "exs", "md", "markdown",
-                "mdx", "txt", "text", "log", "json", "yaml", "yml", "toml", "csv", "jpg", "jpeg",
-                "tif", "tiff",
+                "cpp", "cc", "cxx", "c", "h", "hpp", "hh", "rs", "ex", "exs", "js", "mjs", "cjs",
+                "ts", "tsx", "mts", "cts", "py", "java", "cs", "md", "markdown", "mdx", "txt",
+                "text", "log", "json", "yaml", "yml", "toml", "csv", "jpg", "jpeg", "tif", "tiff",
             ],
         )
     }
@@ -342,6 +342,10 @@ mod tests {
         );
         assert_eq!(
             p.probe(&desc("img.tif", "image/tiff"), &proto),
+            Support::None
+        );
+        assert_eq!(
+            p.probe(&desc("app.js", "text/javascript"), &proto),
             Support::None
         );
         assert_eq!(

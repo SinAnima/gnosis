@@ -112,7 +112,7 @@ fn candidate_category(object: &ObjectDescriptor, _proto: &ProtoData) -> String {
         "mp4" | "mov" | "webm" => "video-provider".into(),
         "zip" | "tar" | "gz" | "tgz" | "7z" => "archive-provider".into(),
         "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" => "office-provider".into(),
-        "py" | "js" | "ts" | "go" | "java" => "future-treesitter".into(),
+        "go" => "future-treesitter".into(),
         _ if object.media_type.starts_with("text/") => "text-provider".into(),
         _ => "binary-or-unknown".into(),
     }

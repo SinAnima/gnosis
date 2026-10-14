@@ -119,6 +119,26 @@ def main() -> None:
         '#include "rule.hpp"\nnamespace ledger {\nint apply(int amount) { return amount; }\n}\n',
     )
     write(
+        "js/price.js",
+        "import ledger from './ledger.js';\nfunction price(x) { return x; }\nclass Quote {}\n",
+    )
+    write(
+        "ts/price.ts",
+        "export function price(x: number) { return x; }\nexport class Quote {}\n",
+    )
+    write(
+        "python/price.py",
+        "import ledger\n\ndef price(x):\n    return x\n\nclass Quote:\n    pass\n",
+    )
+    write(
+        "java/Quote.java",
+        "import ledger.Entry;\nclass Quote { int price(int x) { return x; } }\n",
+    )
+    write(
+        "csharp/Quote.cs",
+        "using Ledger;\nclass Quote { int Price(int x) { return x; } }\n",
+    )
+    write(
         "docs/overview.md",
         "# Overview\n\nSynthetic catalog for the baseline harness.\n",
     )

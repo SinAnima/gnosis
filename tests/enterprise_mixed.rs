@@ -132,6 +132,23 @@ fn enterprise_mixed_matches_the_golden_and_skips_a_second_scan() {
     let actual = project(&db);
     drop(db);
 
+    let camera = root.join("images/camera.jpg");
+    let inspected = Command::new(cargo_bin!("gnosis"))
+        .args([
+            "inspect",
+            camera.to_str().unwrap(),
+            "--json",
+            "--knowledge-db",
+            knowledge_db.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(inspected.status.success(), "{:?}", inspected.stderr);
+    let inspected_out = String::from_utf8_lossy(&inspected.stdout);
+    assert!(inspected_out.contains("exif:DateTimeOriginal"));
+    assert!(inspected_out.contains("fs:mtime"));
+    assert!(inspected_out.contains("not_attempted"));
+
     let golden = golden_path();
     if std::env::var("GNOSIS_WRITE_BASELINE").is_ok() {
         fs::write(

@@ -820,15 +820,23 @@ impl Pipeline {
             }
             match decision {
                 Classify::Keep { touch_stat } => {
-                    if touch_stat {
-                        self.knowledge.update_stat(
-                            &object.id,
-                            object.size,
-                            unix_ms(object.modified),
-                            object.etag.clone(),
-                        )?;
+                    let stamp = crate::intrinsic::extractor_stamp();
+                    let stored_stamp = stored
+                        .get(object.id.as_str())
+                        .and_then(|record| record.intrinsic_version.clone());
+                    if stored_stamp.as_deref() != Some(stamp.as_str()) {
+                        decided.push((object.clone(), ReanalyzeReason::Intrinsic, true));
+                    } else {
+                        if touch_stat {
+                            self.knowledge.update_stat(
+                                &object.id,
+                                object.size,
+                                unix_ms(object.modified),
+                                object.etag.clone(),
+                            )?;
+                        }
+                        decided.push((object.clone(), ReanalyzeReason::Unchanged, false));
                     }
-                    decided.push((object.clone(), ReanalyzeReason::Unchanged, false));
                 }
                 Classify::NeedBytes => {
                     decided.push((object.clone(), ReanalyzeReason::Content, true));
@@ -970,6 +978,7 @@ fn parse_reason(value: &str) -> Option<ReanalyzeReason> {
         "dependency" => ReanalyzeReason::Dependency,
         "unchanged" => ReanalyzeReason::Unchanged,
         "deleted" => ReanalyzeReason::Deleted,
+        "intrinsic" => ReanalyzeReason::Intrinsic,
         _ => return None,
     })
 }
@@ -1018,6 +1027,7 @@ fn persist_current(
     provider_version: Option<&str>,
     entities: &[crate::knowledge::Entity],
     relationships: &[crate::knowledge::Relationship],
+    evidence: Option<&crate::intrinsic::ArtifactEvidenceRecord>,
 ) -> Result<()> {
     let (stored, reason) = {
         let st = store.lock().unwrap();
@@ -1039,6 +1049,8 @@ fn persist_current(
         object: stored,
         entities: entities.to_vec(),
         relationships: relationships.to_vec(),
+        evidence: evidence.cloned(),
+        intrinsic_version: Some(crate::intrinsic::extractor_stamp()),
     };
     knowledge.put(&record)
 }
@@ -1104,7 +1116,7 @@ fn process_object(
         size: object.size,
         modified: object.modified,
         permissions: access.permissions(object),
-        fingerprint: Some(fingerprint),
+        fingerprint: Some(fingerprint.clone()),
         git: if use_git {
             git.enrich(&object.path)
         } else {
@@ -1114,6 +1126,8 @@ fn process_object(
         requested_url: page.as_ref().map(|p| p.requested_url.clone()),
         final_url: page.as_ref().map(|p| p.final_url.clone()),
     };
+
+    let mut evidence = crate::intrinsic::extract_intrinsic(object, &proto, &bytes);
 
     let (provider, support) = match providers.select(object, &proto) {
         Some(pair) => pair,
@@ -1139,7 +1153,7 @@ fn process_object(
                 prior,
                 UnderstandingStatus::Unknown,
             );
-            persist_current(knowledge, store, object, None, &[], &[])?;
+            persist_current(knowledge, store, object, None, &[], &[], Some(&evidence))?;
             let _ = events.send(PipelineEvent::ObjectClassified {
                 id: object.id.clone(),
                 status: UnderstandingStatus::Unknown,
@@ -1155,6 +1169,73 @@ fn process_object(
             });
         }
     };
+
+    let refresh_only = store
+        .lock()
+        .unwrap()
+        .reason(&object.id)
+        .is_some_and(|reason| reason == "intrinsic");
+    if refresh_only {
+        if let Some(prior) = knowledge.get(&object.id)? {
+            let same = prior.fingerprint.as_deref() == Some(fingerprint.as_str())
+                && prior.provider_id.as_deref() == Some(provider.id().as_str())
+                && prior.provider_version.as_deref() == Some(provider.version());
+            if same {
+                let raw = prior
+                    .evidence
+                    .as_ref()
+                    .map(|item| item.structural_status)
+                    .unwrap_or(prior.object.status);
+                crate::intrinsic::apply_structural(
+                    &mut evidence,
+                    provider.id().as_str(),
+                    raw,
+                    prior.object.classification_reason.clone(),
+                );
+                let version = provider.version().to_string();
+                let entity_ids: Vec<_> = prior
+                    .entities
+                    .iter()
+                    .map(|entity| entity.id.clone())
+                    .collect();
+                store.lock().unwrap().replace_analysis(
+                    StoredObject {
+                        descriptor: object.clone(),
+                        proto: proto.clone(),
+                        status: evidence.user_status,
+                        provider: Some(provider.id()),
+                        classification_reason: evidence.status_reason.clone(),
+                        entity_ids,
+                        diagnostics: prior.object.diagnostics.clone(),
+                    },
+                    prior.entities.clone(),
+                    prior.relationships.clone(),
+                );
+                persist_current(
+                    knowledge,
+                    store,
+                    object,
+                    Some(&version),
+                    &prior.entities,
+                    &prior.relationships,
+                    Some(&evidence),
+                )?;
+                let _ = events.send(PipelineEvent::ObjectClassified {
+                    id: object.id.clone(),
+                    status: evidence.user_status,
+                    reason: evidence.status_reason.clone(),
+                });
+                return Ok(AnalyzeObjectResult {
+                    object_id: object.id.as_str().to_string(),
+                    status: evidence.user_status,
+                    provider: Some(provider.id().as_str().to_string()),
+                    entities: prior.entities.len(),
+                    relationships: prior.relationships.len(),
+                    classification_reason: evidence.status_reason,
+                });
+            }
+        }
+    }
 
     let _ = events.send(PipelineEvent::ProviderSelected {
         id: object.id.clone(),
@@ -1192,7 +1273,21 @@ fn process_object(
                 prior,
                 UnderstandingStatus::Failed,
             );
-            persist_current(knowledge, store, object, Some(&version), &[], &[])?;
+            crate::intrinsic::apply_structural(
+                &mut evidence,
+                provider.id().as_str(),
+                UnderstandingStatus::Failed,
+                Some(message.clone()),
+            );
+            persist_current(
+                knowledge,
+                store,
+                object,
+                Some(&version),
+                &[],
+                &[],
+                Some(&evidence),
+            )?;
             let _ = events.send(PipelineEvent::ObjectClassified {
                 id: object.id.clone(),
                 status: UnderstandingStatus::Failed,
@@ -1229,21 +1324,29 @@ fn process_object(
         .iter()
         .map(|d| d.message.clone())
         .collect();
+    crate::intrinsic::apply_structural(
+        &mut evidence,
+        provider.id().as_str(),
+        result.status,
+        result.classification_reason.clone(),
+    );
+    let status = evidence.user_status;
+    let classification_reason = evidence.status_reason.clone();
     let version = provider.version().to_string();
     store.lock().unwrap().replace_analysis(
         StoredObject {
             descriptor: object.clone(),
             proto,
-            status: result.status,
+            status,
             provider: Some(provider.id()),
-            classification_reason: result.classification_reason.clone(),
+            classification_reason: classification_reason.clone(),
             entity_ids,
             diagnostics,
         },
         result.record.entities.clone(),
         result.record.relationships.clone(),
     );
-    note_status(metrics, object.id.as_str(), prior, result.status);
+    note_status(metrics, object.id.as_str(), prior, status);
     persist_current(
         knowledge,
         store,
@@ -1251,27 +1354,28 @@ fn process_object(
         Some(&version),
         &result.record.entities,
         &result.record.relationships,
+        Some(&evidence),
     )?;
     let _ = events.send(PipelineEvent::AnalysisCompleted {
         id: object.id.clone(),
         provider: provider.id(),
-        status: result.status,
+        status,
         entities: result.record.entities.len(),
         relationships: result.record.relationships.len(),
     });
     let _ = events.send(PipelineEvent::ObjectClassified {
         id: object.id.clone(),
-        status: result.status,
-        reason: result.classification_reason.clone(),
+        status,
+        reason: classification_reason.clone(),
     });
 
     Ok(AnalyzeObjectResult {
         object_id: object.id.as_str().to_string(),
-        status: result.status,
+        status,
         provider: Some(provider.id().as_str().to_string()),
         entities: result.record.entities.len(),
         relationships: result.record.relationships.len(),
-        classification_reason: result.classification_reason,
+        classification_reason,
     })
 }
 

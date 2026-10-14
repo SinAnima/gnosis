@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-14
+
+### Added
+
+- **Intrinsic evidence** — signature and EXIF facts are stored beside the winning reader. `gnosis inspect <file> --json` prints proto, sniff, and those facts separately from structural entities. Semantic coverage stays `not_attempted` when only EXIF was read, and a JPEG or TIFF with EXIF is partial in the scan.
+- **More syntax readers** — JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`, `.tsx`, `.mts`, `.cts`), Python (`.py`), Java (`.java`), and C# (`.cs`) at the same depth as Rust, Elixir, and C++. `--llm` does not take a file one of these readers claims.
+
+### Notes
+
+- No PNG, Office, or PDF readers. Go, PHP, Ruby, Kotlin, and Swift stay inventoried. The path is still the object id. OKF filenames are unchanged.
+
 ## [0.4.2] - 2026-10-12
 
 ### Added
@@ -44,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **YAML parser** — documents and OKF frontmatter use `yaml-rust2` instead of archived `serde_yaml`, which depended on unmaintained `unsafe-libyaml` (`RUSTSEC-2024-0449`).
 - **`cargo audit`** — `h2` 0.4.20 (`RUSTSEC-2026-0258`), `rustls` 0.23.45 (`RUSTSEC-2026-0285`), and unyanked `chacha20` 0.10.2. `aws-sdk-s3` 1.146.1 drops unsound `lru` 0.16 (`RUSTSEC-2026-0253`).
 - **`cargo audit`** — `quinn-proto` 0.11.19 (`RUSTSEC-2026-0338`, `RUSTSEC-2026-0339`, `RUSTSEC-2026-0340`, `RUSTSEC-2026-0341`, `RUSTSEC-2026-0342`).
+- **`cargo deny`** — `rustls` 0.23.46 (`RUSTSEC-2026-0346`, `RUSTSEC-2026-0347`, `RUSTSEC-2026-0348`, `RUSTSEC-2026-0349`).
 - **crates.io package size** — the published crate omits the demo PDF and PNGs under `fixtures/mixed-repo/docs/`. Those files stay in git; crates.io rejects uploads over 10 MiB.
 
 ## [0.3.0] - 2026-10-11
@@ -114,7 +126,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SinAnima/gnosis/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/SinAnima/gnosis/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SinAnima/gnosis/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SinAnima/gnosis/compare/v0.3.0...v0.4.0

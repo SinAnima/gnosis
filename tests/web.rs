@@ -424,33 +424,60 @@ fn html_provider_emits_links_without_llm_stamps() {
 }
 
 #[test]
-fn css_and_javascript_stay_unknown() {
+fn css_stays_unknown_and_javascript_is_parsed() {
     let reg = default_registry();
-    for (name, media) in [("app.css", "text/css"), ("app.js", "text/javascript")] {
-        let object = ObjectDescriptor {
-            id: gnosis::ObjectId::new(format!("obj:web:{name}")),
-            path: PathBuf::from(name),
-            relative_path: PathBuf::from(name),
-            is_dir: false,
-            size: 4,
-            modified: None,
-            media_type: media.into(),
-            extension: Some(name.rsplit('.').next().unwrap().into()),
-            etag: None,
-        };
-        let proto = ProtoData {
-            filename: name.into(),
-            media_type: media.into(),
-            extension: object.extension.clone(),
-            ..ProtoData::default()
-        };
-        let (provider, support) = reg.select(&object, &proto).unwrap();
-        assert_ne!(provider.id().as_str(), "plaintext");
-        assert_eq!(support, Support::Weak);
-        let mut reader = BytesContentReader::from_slice(b"x{}");
-        let result = provider.analyze(&object, &proto, &mut reader).unwrap();
-        assert_eq!(result.status, UnderstandingStatus::Unknown);
-    }
+    let css = ObjectDescriptor {
+        id: gnosis::ObjectId::new("obj:web:app.css"),
+        path: PathBuf::from("app.css"),
+        relative_path: PathBuf::from("app.css"),
+        is_dir: false,
+        size: 4,
+        modified: None,
+        media_type: "text/css".into(),
+        extension: Some("css".into()),
+        etag: None,
+    };
+    let proto = ProtoData {
+        filename: "app.css".into(),
+        media_type: "text/css".into(),
+        extension: Some("css".into()),
+        ..ProtoData::default()
+    };
+    let (provider, support) = reg.select(&css, &proto).unwrap();
+    assert_ne!(provider.id().as_str(), "plaintext");
+    assert_eq!(support, Support::Weak);
+    let mut reader = BytesContentReader::from_slice(b"x{}");
+    let result = provider.analyze(&css, &proto, &mut reader).unwrap();
+    assert_eq!(result.status, UnderstandingStatus::Unknown);
+
+    let js = ObjectDescriptor {
+        id: gnosis::ObjectId::new("obj:web:app.js"),
+        path: PathBuf::from("app.js"),
+        relative_path: PathBuf::from("app.js"),
+        is_dir: false,
+        size: 32,
+        modified: None,
+        media_type: "text/javascript".into(),
+        extension: Some("js".into()),
+        etag: None,
+    };
+    let proto = ProtoData {
+        filename: "app.js".into(),
+        media_type: "text/javascript".into(),
+        extension: Some("js".into()),
+        ..ProtoData::default()
+    };
+    let (provider, support) = reg.select(&js, &proto).unwrap();
+    assert_eq!(provider.id().as_str(), "tree-sitter-javascript");
+    assert_eq!(support, Support::Full);
+    let mut reader = BytesContentReader::from_slice(b"function price(x) { return x; }\n");
+    let result = provider.analyze(&js, &proto, &mut reader).unwrap();
+    assert_eq!(result.status, UnderstandingStatus::Understood);
+    assert!(result
+        .record
+        .entities
+        .iter()
+        .any(|entity| entity.kind == "function" && entity.name == "price"));
 }
 
 #[test]
