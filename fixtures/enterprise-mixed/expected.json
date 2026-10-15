@@ -182,6 +182,18 @@
     {
       "entities": [
         {
+          "kind": "unknown_object",
+          "name": "art.psd"
+        }
+      ],
+      "path": "images/art.psd",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
           "kind": "image",
           "name": "camera.jpg"
         }
@@ -201,7 +213,19 @@
       "path": "images/caption.png",
       "provider": "generic-metadata",
       "relationships": [],
-      "status": "unknown"
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "photo.webp"
+        }
+      ],
+      "path": "images/photo.webp",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
     },
     {
       "entities": [
@@ -212,6 +236,18 @@
       ],
       "path": "images/scan.tif",
       "provider": "exif",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "still.avif"
+        }
+      ],
+      "path": "images/still.avif",
+      "provider": "generic-metadata",
       "relationships": [],
       "status": "partial"
     },

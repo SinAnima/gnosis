@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-15
+
+### Added
+
+- **Image container metadata** — PNG (`IHDR` and text chunks), WebP (dimensions, EXIF, and XMP presence), AVIF (sequence-header dimensions), and PSD (header and layer names) are intrinsic facts. A file whose container metadata was read is partial. Semantic coverage stays `not_attempted`. No pixel decode.
+
+### Notes
+
+- Structured XMP and IPTC fields, ICC profile bodies, and AVIF EXIF, orientation, and XMP are not read. The private list of those gaps is `baoulo/library-gaps.md`. GIF and SVG stay inventoried. Office and PDF readers are still open.
+
 ## [0.5.0] - 2026-10-14
 
 ### Added
@@ -130,7 +140,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/SinAnima/gnosis/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/SinAnima/gnosis/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/SinAnima/gnosis/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SinAnima/gnosis/compare/v0.4.0...v0.4.1

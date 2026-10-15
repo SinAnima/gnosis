@@ -1,5 +1,7 @@
 # v1 baseline (v0.4.2)
 
+This page records the v0.4.2 measurement. The crate in this tree is 0.5.1: JPEG and TIFF with EXIF are partial, PNG, WebP, AVIF, and PSD container metadata is partial, and JavaScript, TypeScript, Python, Java, and C# have Tree-sitter readers. See [CHANGELOG.md](../../CHANGELOG.md).
+
 Ground truth for the tree that adds the Stage 0 harness on top of commit `4f84c54` (`0.4.2/Baseline_audit-regression_harness`). The matrix below was run on that working tree. This document does not claim a new reader.
 
 ## Pin

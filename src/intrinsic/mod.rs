@@ -1,20 +1,28 @@
 //! Intrinsic evidence collected beside the winning structural provider.
 //!
-//! Signature and EXIF facts do not compete in [`crate::ProviderRegistry::select`].
+//! Signature, EXIF, and container-metadata facts do not compete in [`crate::ProviderRegistry::select`].
 //! A missing field stays an explicit outcome. Conflicting timestamps stay as
 //! separate facts; `creation_time` only lists them.
 
+mod avif;
 mod exif;
+mod png;
+mod psd;
 mod signature;
+mod webp;
 
 use crate::connectors::{ObjectDescriptor, ProtoData};
 use crate::knowledge::{Diagnostic, DiagnosticSeverity};
 use crate::status::UnderstandingStatus;
 use crate::GnosisError;
+pub use avif::AvifExtractor;
 pub use exif::ExifExtractor;
+pub use png::PngExtractor;
+pub use psd::PsdExtractor;
 use serde::{Deserialize, Serialize};
 pub use signature::SignatureExtractor;
 use std::path::Path;
+pub use webp::WebpExtractor;
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const FACT_CAP: usize = 64;
@@ -133,6 +141,12 @@ pub fn sniff(bytes: &[u8], declared_media: &str) -> FileSignature {
         "tiff"
     } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "png"
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else if bytes.starts_with(b"8BPS") {
+        "psd"
+    } else if is_avif(bytes) {
+        "avif"
     } else if bytes.starts_with(b"%PDF") {
         "pdf"
     } else if bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") {
@@ -205,17 +219,31 @@ pub trait IntrinsicExtractor: Send + Sync {
     fn extract(&self, ctx: &ExtractContext<'_>) -> crate::Result<Vec<MetadataFact>>;
 }
 
+/// `ftyp` major brand `avif` or `avis`.
+fn is_avif(bytes: &[u8]) -> bool {
+    bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && (bytes[8..12] == *b"avif" || bytes[8..12] == *b"avis")
+}
+
+fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 6] {
+    [
+        &SignatureExtractor,
+        &ExifExtractor,
+        &PngExtractor,
+        &WebpExtractor,
+        &AvifExtractor,
+        &PsdExtractor,
+    ]
+}
+
 /// Stable stamp of the registered extractors. A change re-runs only this stage.
 pub fn extractor_stamp() -> String {
-    let signature = SignatureExtractor;
-    let exif = ExifExtractor;
-    format!(
-        "{}:{}+{}:{}",
-        signature.id(),
-        signature.version(),
-        exif.id(),
-        exif.version()
-    )
+    registered_extractors()
+        .iter()
+        .map(|extractor| format!("{}:{}", extractor.id(), extractor.version()))
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 pub fn extract_intrinsic(
@@ -231,7 +259,7 @@ pub fn extract_intrinsic(
         bytes,
         signature: &signature,
     };
-    let extractors: [&dyn IntrinsicExtractor; 2] = [&SignatureExtractor, &ExifExtractor];
+    let extractors = registered_extractors();
     let mut facts = acquisition_facts(proto);
     let mut diagnostics = Vec::new();
     let mut saw_domain = false;
@@ -333,7 +361,11 @@ pub fn apply_structural(
         Coverage::NotAttempted
     };
     record.structural_status = structural;
-    let (status, reason) = project_user_status(provider_id, structural, reason);
+    let (mut status, mut reason) = project_user_status(provider_id, structural, reason);
+    if status == UnderstandingStatus::Unknown && record.intrinsic.coverage == Coverage::Partial {
+        status = UnderstandingStatus::PartiallyUnderstood;
+        reason = Some("container metadata; semantic understanding not attempted".into());
+    }
     record.user_status = status;
     record.status_reason = reason;
 }
@@ -675,5 +707,218 @@ mod tests {
         assert_eq!(record.intrinsic.signature.sniffed, "jpeg");
         assert_eq!(record.intrinsic.signature.access, "spooled");
         assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+    }
+
+    fn fact<'a>(record: &'a ArtifactEvidenceRecord, key: &str) -> &'a MetadataFact {
+        record
+            .intrinsic
+            .facts
+            .iter()
+            .find(|fact| fact.key == key)
+            .unwrap_or_else(|| panic!("missing {key}"))
+    }
+
+    #[test]
+    fn sniff_webp_avif_and_psd() {
+        assert_eq!(
+            sniff(b"RIFF\x00\x00\x00\x00WEBP", "image/webp").sniffed,
+            "webp"
+        );
+        assert_eq!(
+            sniff(b"\x00\x00\x00\x18ftypavif", "image/avif").sniffed,
+            "avif"
+        );
+        assert_eq!(
+            sniff(b"\x00\x00\x00\x18ftypavis", "image/avif").sniffed,
+            "avif"
+        );
+        assert_eq!(
+            sniff(b"8BPS\x00\x01", "image/vnd.adobe.photoshop").sniffed,
+            "psd"
+        );
+    }
+
+    #[test]
+    fn png_text_and_ihdr_project_partial() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/caption.png").unwrap();
+        let object = sample_object();
+        let proto = ProtoData {
+            filename: "caption.png".into(),
+            ..ProtoData::default()
+        };
+        let mut record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "png");
+        assert_eq!(fact(&record, "png:width").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "png:height").value, FactValue::Integer(1));
+        assert_eq!(
+            fact(&record, "png:text:Description").value,
+            FactValue::String("Synthetic caption".into())
+        );
+        assert!(!record
+            .intrinsic
+            .facts
+            .iter()
+            .any(|item| item.key.contains("icc")));
+        apply_structural(
+            &mut record,
+            "generic-metadata",
+            UnderstandingStatus::Unknown,
+            None,
+        );
+        assert_eq!(record.user_status, UnderstandingStatus::PartiallyUnderstood);
+        assert_eq!(
+            record.status_reason.as_deref(),
+            Some("container metadata; semantic understanding not attempted")
+        );
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+        assert_eq!(record.proto.filename, "caption.png");
+    }
+
+    #[test]
+    fn truncated_and_huge_png_keep_proto() {
+        let object = sample_object();
+        let proto = ProtoData {
+            filename: "broken.png".into(),
+            ..ProtoData::default()
+        };
+        let truncated = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00";
+        let record = extract_intrinsic(&object, &proto, truncated);
+        assert_eq!(record.proto.filename, "broken.png");
+        assert!(record
+            .intrinsic
+            .diagnostics
+            .iter()
+            .any(|diag| diag.message.starts_with("png:")));
+        let mut huge = b"\x89PNG\r\n\x1a\n".to_vec();
+        huge.extend_from_slice(&u32::MAX.to_be_bytes());
+        huge.extend_from_slice(b"tEXt");
+        let record = extract_intrinsic(&object, &proto, &huge);
+        assert_eq!(record.proto.filename, "broken.png");
+        assert_eq!(record.intrinsic.coverage, Coverage::Unreadable);
+    }
+
+    #[test]
+    fn hostile_compressed_png_text_keeps_proto() {
+        let object = sample_object();
+        let proto = ProtoData {
+            filename: "hostile.png".into(),
+            ..ProtoData::default()
+        };
+        let ihdr = {
+            let mut data = 1u32.to_be_bytes().to_vec();
+            data.extend_from_slice(&1u32.to_be_bytes());
+            data.extend_from_slice(&[8, 2, 0, 0, 0]);
+            png_chunk(b"IHDR", &data)
+        };
+        let ztxt = png_chunk(b"zTXt", b"Comment\x00\x00not-deflate");
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&ihdr);
+        bytes.extend_from_slice(&ztxt);
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.proto.filename, "hostile.png");
+        assert!(record
+            .intrinsic
+            .diagnostics
+            .iter()
+            .any(|diag| diag.message.contains("zTXt") || diag.message.starts_with("png:")));
+    }
+
+    fn png_chunk(tag: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut out = (data.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(tag);
+        out.extend_from_slice(data);
+        let crc = crc32(&out[4..]);
+        out.extend_from_slice(&crc.to_be_bytes());
+        out
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffffu32;
+        for byte in data {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn webp_keeps_dimensions_exif_and_xmp_presence() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/photo.webp").unwrap();
+        let mut object = sample_object();
+        object.extension = Some("webp".into());
+        object.media_type = "image/webp".into();
+        let proto = ProtoData {
+            filename: "photo.webp".into(),
+            modified: object.modified,
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(fact(&record, "webp:width").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "webp:height").value, FactValue::Integer(1));
+        assert!(matches!(
+            fact(&record, "exif:DateTimeOriginal").value,
+            FactValue::Timestamp(_)
+        ));
+        assert_eq!(record.intrinsic.creation_time().len(), 2);
+        assert_eq!(
+            fact(&record, "webp:xmp_present").value,
+            FactValue::Bool(true)
+        );
+        assert!(fact(&record, "webp:xmp_length").value != FactValue::Integer(0));
+        assert!(record.intrinsic.facts.iter().all(|item| {
+            item.key != "dc:title"
+                && !matches!(&item.value, FactValue::String(text) if text.contains("dc:title"))
+        }));
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+    }
+
+    #[test]
+    fn avif_dimensions_do_not_store_the_payload() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/still.avif").unwrap();
+        let object = sample_object();
+        let proto = ProtoData {
+            filename: "still.avif".into(),
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "avif");
+        assert_eq!(fact(&record, "avif:width").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "avif:height").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "avif:bit_depth").value, FactValue::Integer(8));
+        assert_eq!(
+            fact(&record, "avif:still_picture").value,
+            FactValue::Bool(true)
+        );
+        assert!(record.intrinsic.facts.iter().all(|item| {
+            !item.key.contains("payload")
+                && !matches!(&item.value, FactValue::String(text) if text.len() > 64)
+        }));
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+    }
+
+    #[test]
+    fn psd_header_and_layer_name() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/art.psd").unwrap();
+        let object = sample_object();
+        let proto = ProtoData {
+            filename: "art.psd".into(),
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "psd");
+        assert_eq!(fact(&record, "psd:width").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "psd:height").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "psd:depth").value, FactValue::Integer(8));
+        assert_eq!(
+            fact(&record, "psd:color_mode").value,
+            FactValue::String("grayscale".into())
+        );
+        assert_eq!(
+            fact(&record, "psd:layers").value,
+            FactValue::Array(vec!["Ink".into()])
+        );
     }
 }
