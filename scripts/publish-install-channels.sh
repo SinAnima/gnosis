@@ -174,7 +174,11 @@ EOF
     echo "${name}: already at ${TAG}"
     return 0
   fi
-  git -C "${dest}" commit -m "Publish gnosis ${TAG}."
+  # The Actions runner has no commit identity. Pass it for this command only.
+  git -C "${dest}" \
+    -c user.name="${GIT_AUTHOR_NAME:-github-actions[bot]}" \
+    -c user.email="${GIT_AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}" \
+    commit -m "Publish gnosis ${TAG}."
   if [[ -n "${GH_TOKEN:-}" ]]; then
     git -C "${dest}" -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" push origin HEAD:main
   else
