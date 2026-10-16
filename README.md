@@ -7,23 +7,24 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
 
-**Gnosis compiles what you have into an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundle.**
-
-Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation site. It reads the files and pages there and writes what it can see — modules, functions, types, imports, headings, links, columns, and image metadata — as Markdown with YAML frontmatter. That folder is `knowledge.okf/`. Watch the scan in the terminal, or run it from a script and keep the bundle. The next run reads again only the files and pages that changed.
+**Gnosis compiles a folder, an S3 prefix, or a documentation site into a structured inventory and an OKF bundle.**
 
 <img width="600" alt="Gnosis scan in the terminal" src="https://github.com/user-attachments/assets/1dc94cac-473b-4d1f-bc8e-9bcdc4e88d24" />
 
 ## Contents
 
-- [Install](#install)
-  - [Homebrew](#homebrew)
-  - [Scoop (Windows)](#scoop-windows)
-  - [mise](#mise)
-  - [asdf](#asdf)
-  - [install.sh](#installsh)
-  - [crates.io](#cratesio)
-- [Quick start](#quick-start)
-- [Using Gnosis](#using-gnosis)
+- [What Gnosis is](#what-gnosis-is)
+- [What a scan does](#what-a-scan-does)
+- [How a scan works](#how-a-scan-works)
+- [How you use it](#how-you-use-it)
+  - [Install](#install)
+    - [Homebrew](#homebrew)
+    - [Scoop (Windows)](#scoop-windows)
+    - [mise](#mise)
+    - [asdf](#asdf)
+    - [install.sh](#installsh)
+    - [crates.io](#cratesio)
+  - [Quick start](#quick-start)
   - [The OKF bundle](#the-okf-bundle)
   - [Commands](#commands)
   - [Scan options](#scan-options)
@@ -56,7 +57,36 @@ Point Gnosis at a project folder, an S3 bucket, or an `https://` documentation s
 - [Contributing](#contributing)
 - [License](#license)
 
-## Install
+## What Gnosis is
+
+Gnosis is a knowledge compiler for the files a project already has. You point it at source code, documents, data files, and images. It keeps a durable record of what those files contain: modules, functions, types, imports, headings, links, columns, and camera metadata. You watch that record fill in from the terminal, query it, or export it as a directory of Markdown pages called an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundle (`knowledge.okf/`).
+
+A syntax reader reports the structure a grammar can see. The image reader reports EXIF tags. A file that no reader claims stays in the inventory as unknown, so the gap stays visible.
+
+## What a scan does
+
+One scan turns a source into that record:
+
+1. It discovers files in a local folder, keys under an `s3://` prefix, or HTML pages linked from an `http://` or `https://` start URL.
+2. It reads each file up to `--max-size` (2 MiB by default).
+3. It records intrinsic facts that sit beside the structural reader: the file signature, EXIF when the file is JPEG or TIFF, and container metadata for PNG, WebP, AVIF, and PSD.
+4. It picks one structural reader. A full claim beats a partial one. Tree-sitter reads C, C++, Rust, Elixir, JavaScript, TypeScript, Python, Java, and C#. Other readers cover Markdown, HTML, plain text, JSON, YAML, TOML, and CSV.
+5. It saves the entities and relationships in `.gnosis/knowledge.redb`. A later scan skips a file whose contents and reader version are unchanged.
+6. With `--export`, it writes `knowledge.okf/`: one Markdown page for each object, entity, and relationship.
+
+Each file ends as **understood**, **partial**, **unknown**, or **failed**. JPEG and TIFF that carry EXIF, and PNG, WebP, AVIF, and PSD whose container metadata was read, are partial. Those facts are metadata, not a reading of the scene.
+
+## How a scan works
+
+Discovery and analysis are separate. Discovery enqueues one durable job per file in `.gnosis/jobs.redb`. A worker reads the bytes, sniffs the format from the magic bytes and the extension, runs every matching intrinsic extractor, then runs the single winning reader. Each finished file is written to the knowledge file immediately, so a crash keeps the files already completed. The terminal UI follows the same event stream a script sees.
+
+Readers are deterministic. Tree-sitter walks a grammar and does not invoke that language's compiler. Document and data readers use small parsers. The image readers are pure Rust. They read metadata from JPEG, TIFF, PNG, WebP, AVIF, and PSD, and they do not decode pixels. GIF and SVG are inventoried and not decoded. An optional model, enabled with `--features llm` at build time and `--llm` on the scan, may claim files the built-in readers leave alone. Those claims stay inferences until you accept them. A reader that fully understands a file always wins over the model.
+
+The next sections are how you run that scan.
+
+## How you use it
+
+### Install
 
 Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. After each release, Homebrew and Scoop formulas take their checksums from that file.
 
@@ -82,7 +112,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.4.1
+mise use -g github:SinAnima/gnosis@0.5.1
 ```
 
 ### asdf
@@ -91,12 +121,12 @@ From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.4.1
+asdf install gnosis 0.5.1
 ```
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.4.1`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.1`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -114,7 +144,7 @@ The published binary analyzes code, documents, and data on its own. Model-assist
 cargo install gnosis --features llm
 ```
 
-## Quick start
+### Quick start
 
 Scan the project you are in. The terminal UI updates as files are read:
 
@@ -140,12 +170,6 @@ A finished headless scan prints how many files were analyzed and how many were a
 ```text
 analyzed 3, skipped 40 unchanged
 ```
-
-## Using Gnosis
-
-A scan walks a folder or lists an S3 prefix. It skips `target`, `node_modules`, `.git`, `knowledge.okf`, and `.gnosis`. On a local folder it also skips anything matched by `.gitignore`, and it does not follow symlinks.
-
-Each file is classified as **understood**, **partial**, **unknown**, or **failed**. Understood files contribute entities and relationships: functions, types, modules, includes, imports, document headings, and data columns. Unknown files stay in the inventory with their path and media type, so a gap is visible.
 
 ### The OKF bundle
 
@@ -342,10 +366,14 @@ Each object is capped by `--max-size` (2 MiB by default).
 | TOML | `.toml` | Document structure and key paths |
 | CSV and TSV | `.csv`, `.tsv` | A dataset and its columns |
 | JPEG and TIFF | `.jpg`, `.jpeg`, `.tif`, `.tiff`, or `image/jpeg`, `image/tiff` | EXIF: camera make and model, the original date, orientation, exposure, and GPS when the file has them. The scan status is partial: these are metadata facts, not a reading of the picture |
+| PNG | `.png` | Width, height, bit depth, color type, and text chunks. An ICC profile is recorded as present. The scan status is partial |
+| WebP | `.webp` | Width, height, EXIF when a chunk is present, and whether an XMP packet is present. The packet is not parsed. The scan status is partial |
+| AVIF | `.avif` | Width, height, bit depth, and whether the sequence header says the image is a still. The scan status is partial |
+| PSD | `.psd` | Width, height, depth, color mode, and layer names. The scan status is partial |
 
 **Scanned, then left as unknown or partial**
 
-CSS and fonts are recorded and not read as text. PNG, GIF, SVG, and WebP stay in the inventory with a guess such as `image-provider`. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and EXIF facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read.
+GIF and SVG are listed in the inventory with a guess such as `image-provider` and are not decoded. CSS and fonts are recorded and not read as text. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and metadata facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read. Structured XMP, IPTC, ICC profile bodies, and AVIF EXIF are not read.
 
 **Optional model**
 
@@ -753,7 +781,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. 0.1.0 through 0.4.1 are published. 0.4.2 is the baseline harness in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md). 0.5.0, in this tree, adds intrinsic evidence and the JavaScript, TypeScript, Python, Java, and C# readers.
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.5.1. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -763,6 +791,8 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.4.0 | Web ingestion | A bounded `https://` crawl in the same pipeline |
 | 0.4.2 | Baseline | A regression harness and a written gap matrix. No new readers |
 | 0.5.0 | Intrinsic evidence | `gnosis inspect`, namespaced EXIF and signature facts beside the winning reader, and Tree-sitter for JavaScript, TypeScript, Python, Java, and C# |
+| 0.5.1 | Image metadata | PNG, WebP, AVIF, and PSD container metadata. Still not a reading of the picture |
+| 0.5.2 | Phone media | HEIC/HEIF stills and video container metadata (MOV, MP4, M4V). No frame decode and no scene understanding |
 | 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
 | 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
