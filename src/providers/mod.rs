@@ -18,6 +18,7 @@ mod generic;
 mod image;
 #[cfg(feature = "llm")]
 mod llm;
+pub(crate) mod office;
 mod util;
 
 pub use code::{
@@ -33,6 +34,7 @@ pub use llm::{
     parse_llm_json, strip_json_fence, AnthropicAdapter, GeminiAdapter, LlmCompletion,
     LlmSemanticProvider, LlmStamp, LlmVendor, OllamaAdapter, OpenAiAdapter, StaticBackend,
 };
+pub use office::OfficeProvider;
 
 use crate::config::{LlmConfig, LlmMetrics};
 use crate::ProviderRegistry;
@@ -91,6 +93,7 @@ pub fn build_registry(
     registry.register(Box::new(YamlProvider));
     registry.register(Box::new(TomlProvider));
     registry.register(Box::new(CsvProvider));
+    registry.register(Box::new(OfficeProvider));
 
     #[cfg(feature = "llm")]
     if let Some(cfg) = llm {

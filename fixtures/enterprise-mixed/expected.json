@@ -346,37 +346,65 @@
     {
       "entities": [
         {
-          "kind": "unknown_object",
-          "name": "book.xlsx"
+          "kind": "formula",
+          "name": "Prices!B2"
+        },
+        {
+          "kind": "range",
+          "name": "Prices!A1"
+        },
+        {
+          "kind": "workbook",
+          "name": "book"
+        },
+        {
+          "kind": "worksheet",
+          "name": "Prices"
         }
       ],
       "path": "office/book.xlsx",
-      "provider": "generic-metadata",
-      "relationships": [],
+      "provider": "office",
+      "relationships": [
+        "contains",
+        "contains",
+        "references"
+      ],
       "status": "partial"
     },
     {
       "entities": [
         {
-          "kind": "unknown_object",
-          "name": "brief.docx"
+          "kind": "document",
+          "name": "Synthetic brief"
+        },
+        {
+          "kind": "heading",
+          "name": "Overview"
         }
       ],
       "path": "office/brief.docx",
-      "provider": "generic-metadata",
-      "relationships": [],
+      "provider": "office",
+      "relationships": [
+        "has_heading"
+      ],
       "status": "partial"
     },
     {
       "entities": [
         {
-          "kind": "unknown_object",
-          "name": "deck.pptx"
+          "kind": "presentation",
+          "name": "deck"
+        },
+        {
+          "kind": "slide",
+          "name": "Synthetic"
         }
       ],
       "path": "office/deck.pptx",
-      "provider": "generic-metadata",
-      "relationships": [],
+      "provider": "office",
+      "relationships": [
+        "contains"
+      ],
       "status": "partial"
     },
     {

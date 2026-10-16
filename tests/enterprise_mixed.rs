@@ -1,8 +1,8 @@
 //! Baseline harness for `fixtures/enterprise-mixed`.
 //!
 //! The golden file is the oracle, so the scan copies the tree and leaves
-//! `expected.json` out. PNG, Office, PDF, the broken archive, and the
-//! proprietary binary are expected gaps on this release.
+//! `expected.json` out. Office Open XML is partial structural coverage.
+//! PDF, the broken archive, and the proprietary binary stay expected gaps.
 
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;

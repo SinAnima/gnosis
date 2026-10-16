@@ -8,6 +8,7 @@ mod avif;
 mod exif;
 mod heif;
 mod isobmff;
+mod opc;
 mod png;
 mod psd;
 mod signature;
@@ -22,6 +23,7 @@ pub use avif::AvifExtractor;
 pub use exif::ExifExtractor;
 use heif::HeifExtractor;
 use isobmff::IsobmffExtractor;
+use opc::OpcExtractor;
 pub use png::PngExtractor;
 pub use psd::PsdExtractor;
 use serde::{Deserialize, Serialize};
@@ -188,6 +190,7 @@ impl IntrinsicData {
                 fact.key == "exif:DateTimeOriginal"
                     || fact.key == "fs:mtime"
                     || fact.key == "isobmff:creation_time"
+                    || fact.key == "opc:modified"
             })
             .collect()
     }
@@ -246,7 +249,7 @@ fn sniff_ftyp(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 9] {
+fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 10] {
     [
         &SignatureExtractor,
         &ExifExtractor,
@@ -257,6 +260,7 @@ fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 9] {
         &HeifExtractor,
         &IsobmffExtractor,
         &WebmExtractor,
+        &OpcExtractor,
     ]
 }
 

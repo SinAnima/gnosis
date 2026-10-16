@@ -80,7 +80,7 @@ Each file ends as **understood**, **partial**, **unknown**, or **failed**. JPEG 
 
 Discovery and analysis are separate. Discovery enqueues one durable job per file in `.gnosis/jobs.redb`. A worker reads the bytes, sniffs the format from the magic bytes and the extension, runs every matching intrinsic extractor, then runs the single winning reader. Each finished file is written to the knowledge file immediately, so a crash keeps the files already completed. The terminal UI follows the same event stream a script sees.
 
-Readers are deterministic. Tree-sitter walks a grammar and does not invoke that language's compiler. Document and data readers use small parsers. The image and video readers are pure Rust. They read metadata from JPEG, TIFF, PNG, WebP, AVIF, PSD, HEIC, MOV, MP4, M4V, and WebM, and they do not decode pixels or frames. GIF and SVG are inventoried and not decoded. An optional model, enabled with `--features llm` at build time and `--llm` on the scan, may claim files the built-in readers leave alone. Those claims stay inferences until you accept them. A reader that fully understands a file always wins over the model.
+Readers are deterministic. Tree-sitter walks a grammar and does not invoke that language's compiler. Document and data readers use small parsers. The image and video readers are pure Rust. They read metadata from JPEG, TIFF, PNG, WebP, AVIF, PSD, HEIC, MOV, MP4, M4V, and WebM, and they do not decode pixels or frames. DOCX, XLSX, and PPTX are read as Office Open XML packages: properties, headings, formula source, and slides. Formulas are not calculated and macros are not run. GIF and SVG are inventoried and not decoded. An optional model, enabled with `--features llm` at build time and `--llm` on the scan, may claim files the built-in readers leave alone. Those claims stay inferences until you accept them. A reader that fully understands a file always wins over the model.
 
 The next sections are how you run that scan.
 
@@ -88,7 +88,7 @@ The next sections are how you run that scan.
 
 ### Install
 
-Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.5.0. The source tree is 0.5.2 and is not tagged yet.
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.5.2. The source tree is 0.6.0 and is not tagged yet.
 
 ### Homebrew
 
@@ -112,7 +112,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.5.0
+mise use -g github:SinAnima/gnosis@0.5.2
 ```
 
 ### asdf
@@ -126,7 +126,7 @@ asdf install gnosis latest
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.0`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.2`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -373,10 +373,11 @@ Each object is capped by `--max-size` (2 MiB by default).
 | HEIC and HEIF | `.heic`, `.heif` | Brand, width, height, and EXIF including GPS. The scan status is partial |
 | MOV, MP4, and M4V | `.mov`, `.mp4`, `.m4v` | Duration, width, height, creation time, and GPS when the container stores them. The scan status is partial |
 | WebM | `.webm` | Duration, width, and height when the header parses. The scan status is partial |
+| Word, Excel, and PowerPoint | `.docx`, `.xlsx`, `.pptx`, `.docm`, `.xlsm`, `.pptm` | Package properties, headings, worksheet visibility, formula source, and slides with titles and speaker notes. The scan status is partial. Formulas are not calculated and macros are not run |
 
 **Scanned, then left as unknown or partial**
 
-GIF and SVG are listed in the inventory with a guess such as `image-provider` and are not decoded. A WebM whose header does not parse stays on `video-provider` with coverage `not_attempted`. CSS and fonts are recorded and not read as text. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and metadata facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read. Structured XMP, IPTC, ICC profile bodies, AVIF EXIF, the Apple Live Photo identifier, codec fourcc names, and video rotation are not read.
+GIF and SVG are listed in the inventory with a guess such as `image-provider` and are not decoded. A WebM whose header does not parse stays on `video-provider` with coverage `not_attempted`. CSS and fonts are recorded and not read as text. PDFs and other binaries are inventoried the same way. Legacy `.doc`, `.xls`, and `.ppt` files are inventoried with `unsupported_legacy_format` and are not parsed. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and metadata facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read. Structured XMP, IPTC, ICC profile bodies, AVIF EXIF, the Apple Live Photo identifier, codec fourcc names, and video rotation are not read. Formula evaluation, chart and pivot bodies, and password recovery are not attempted.
 
 **Optional model**
 
@@ -784,7 +785,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.5.2. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.6.0. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -796,7 +797,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.5.0 | Intrinsic evidence | `gnosis inspect`, namespaced EXIF and signature facts beside the winning reader, and Tree-sitter for JavaScript, TypeScript, Python, Java, and C# |
 | 0.5.1 | Image metadata | PNG, WebP, AVIF, and PSD container metadata. Still not a reading of the picture |
 | 0.5.2 | Phone media | HEIC/HEIF stills and MOV, MP4, M4V, and WebM container metadata. No frame decode, no Live Photo edge, no codec fourcc, and no rotation |
-| 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
+| 0.6.0 | Office Open XML | DOCX, XLSX, and PPTX package properties and a structural graph: headings, formula source, and slides. No formula calculation, no macros, and no legacy OLE parse |
 | 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
 | 1.0.0 | Stable knowledge infrastructure | Supported schemas, upgrades, and an operating model teams can build on |
