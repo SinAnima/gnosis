@@ -160,3 +160,14 @@ jobs:
           echo "Publishing gnosis ${VERSION}"
           cargo publish --dry-run
           cargo publish
+
+  publish-install-channels:
+    name: Homebrew, Scoop, and asdf
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish install channels
+        env:
+          GH_TOKEN: ${{ secrets.INSTALL_REPOS_TOKEN }}
+        run: bash scripts/publish-install-channels.sh "${GITHUB_REF_NAME}"

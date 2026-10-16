@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# List release tags for gnosis (strip leading v)
-curl -fsSL "https://api.github.com/repos/SinAnima/gnosis/releases" \
-  | sed -n 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/p' \
+# List release tags for gnosis (strip a leading v). BSD and GNU sed both accept this.
+curl -fsSL \
+  -H "Accept: application/vnd.github+json" \
+  -H "User-Agent: asdf-gnosis" \
+  "https://api.github.com/repos/SinAnima/gnosis/releases?per_page=100" \
+  | grep -o '"tag_name": *"[^"]*"' \
+  | sed 's/.*"tag_name": *"//; s/"$//; s/^v//' \
   | sort -V \
   | xargs

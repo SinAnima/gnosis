@@ -88,7 +88,7 @@ The next sections are how you run that scan.
 
 ### Install
 
-Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. After each release, Homebrew and Scoop formulas take their checksums from that file.
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.5.0. The source tree is 0.5.2 and is not tagged yet.
 
 ### Homebrew
 
@@ -112,7 +112,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.5.2
+mise use -g github:SinAnima/gnosis@0.5.0
 ```
 
 ### asdf
@@ -121,12 +121,12 @@ From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.5.2
+asdf install gnosis latest
 ```
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.2`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.0`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
