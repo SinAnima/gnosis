@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-10-16
+
+### Added
+
+- **Phone and video container metadata** — HEIC/HEIF stills (brand, dimensions, EXIF, GPS), MOV/MP4/M4V (duration, dimensions, creation time, GPS), and WebM (duration and dimensions) are intrinsic facts via `nom-exif`. A file whose container metadata was read is partial. Semantic coverage stays `not_attempted`.
+
+### Notes
+
+- No frame decode. The Apple Live Photo content identifier is not an edge, and a matching filename stem is not one either. Codec fourcc names and rotation (`tkhd` matrix, HEIF `irot`) are not read. Those gaps are listed in `baoulo/library-gaps.md`.
+
 ## [0.5.1] - 2026-10-15
 
 ### Added
@@ -140,7 +150,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/SinAnima/gnosis/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/SinAnima/gnosis/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/SinAnima/gnosis/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/SinAnima/gnosis/compare/v0.4.1...v0.4.2

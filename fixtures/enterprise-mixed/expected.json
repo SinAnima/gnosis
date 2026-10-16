@@ -183,6 +183,30 @@
       "entities": [
         {
           "kind": "unknown_object",
+          "name": "IMG_0001.heic"
+        }
+      ],
+      "path": "images/IMG_0001.heic",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "IMG_0001.mov"
+        }
+      ],
+      "path": "images/IMG_0001.mov",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
           "name": "art.psd"
         }
       ],
@@ -211,6 +235,18 @@
         }
       ],
       "path": "images/caption.png",
+      "provider": "generic-metadata",
+      "relationships": [],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "unknown_object",
+          "name": "clip.webm"
+        }
+      ],
+      "path": "images/clip.webm",
       "provider": "generic-metadata",
       "relationships": [],
       "status": "partial"

@@ -183,6 +183,9 @@ fn enterprise_mixed_matches_the_golden_and_skips_a_second_scan() {
     );
     for gap in [
         "images/caption.png",
+        "images/IMG_0001.heic",
+        "images/IMG_0001.mov",
+        "images/clip.webm",
         "office/brief.docx",
         "office/book.xlsx",
         "office/deck.pptx",
@@ -196,6 +199,16 @@ fn enterprise_mixed_matches_the_golden_and_skips_a_second_scan() {
             .unwrap_or_else(|| panic!("missing {gap}"));
         assert_ne!(object["status"], "understood", "{gap} is an expected gap");
         assert_ne!(object["provider"], "llm-semantic");
+    }
+    for path in ["images/IMG_0001.heic", "images/IMG_0001.mov"] {
+        let object = objects
+            .iter()
+            .find(|object| object["path"] == path)
+            .unwrap_or_else(|| panic!("missing {path}"));
+        assert!(
+            object["relationships"].as_array().unwrap().is_empty(),
+            "{path} shares only a filename stem and has no relationship"
+        );
     }
 
     let second = scan(&root, &out, &job_db, &knowledge_db).success();

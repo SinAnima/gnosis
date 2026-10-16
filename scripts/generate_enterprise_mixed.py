@@ -174,6 +174,65 @@ def avif_still() -> bytes:
     return ftyp + mdat + meta
 
 
+def heic_still(tiff: bytes) -> bytes:
+    """HEIC container with an Exif item and an ispe size. No HEVC frame."""
+
+    def box(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", 8 + len(payload)) + tag + payload
+
+    def fullbox(tag: bytes, version: int, payload: bytes) -> bytes:
+        return box(tag, bytes([version, 0, 0, 0]) + payload)
+
+    payload = struct.pack(">I", 0) + b"Exif\x00\x00" + tiff
+    infe = fullbox(b"infe", 2, struct.pack(">HH", 1, 0) + b"Exif" + b"\x00")
+    iinf = fullbox(b"iinf", 0, struct.pack(">H", 1) + infe)
+    ispe = fullbox(b"ispe", 0, struct.pack(">II", 1, 1))
+    ftyp = box(b"ftyp", b"heic" + struct.pack(">I", 0) + b"heic")
+    iloc_inner = bytes([0x44, 0x00]) + struct.pack(">HHHHII", 1, 1, 0, 1, 0, len(payload))
+    meta = fullbox(b"meta", 0, iinf + fullbox(b"iloc", 0, iloc_inner) + ispe)
+    offset = len(ftyp) + len(meta) + 8
+    iloc_inner = bytes([0x44, 0x00]) + struct.pack(">HHHHII", 1, 1, 0, 1, offset, len(payload))
+    meta = fullbox(b"meta", 0, iinf + fullbox(b"iloc", 0, iloc_inner) + ispe)
+    return ftyp + meta + box(b"mdat", payload)
+
+
+def mov_clip() -> bytes:
+    """MOV movie header and video track. No sample frames."""
+
+    def box(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", 8 + len(payload)) + tag + payload
+
+    def fullbox(tag: bytes, version: int, payload: bytes) -> bytes:
+        return box(tag, bytes([version, 0, 0, 0]) + payload)
+
+    mvhd = fullbox(
+        b"mvhd",
+        0,
+        struct.pack(">IIII", 0, 0, 1000, 1500) + (b"\x00" * 76) + struct.pack(">I", 2),
+    )
+    tkhd = fullbox(
+        b"tkhd",
+        0,
+        struct.pack(">IIIII", 0, 0, 1, 0, 1500)
+        + (b"\x00" * 8)
+        + struct.pack(">HHHH", 0, 0, 0, 0)
+        + (b"\x00" * 36)
+        + struct.pack(">HHHH", 320, 0, 240, 0),
+    )
+    hdlr = fullbox(b"hdlr", 0, b"\x00\x00\x00\x00vide")
+    trak = box(b"trak", tkhd + box(b"mdia", hdlr))
+    xyz = box(b"\xa9xyz", b"\x00\x00\x00\x00+27.1281+100.2508+000.000/")
+    moov = box(b"moov", mvhd + trak + box(b"udta", xyz))
+    ftyp = box(b"ftyp", b"qt  " + struct.pack(">I", 0) + b"qt  ")
+    return ftyp + moov
+
+
+WEBM_CLIP = bytes.fromhex(
+    "1a45dfa3884282857765626d0018538067a91549a966932ad7b184000f4240"
+    "44898840c77000000000001654ae6b8cae8ae088b0820280ba8201e0"
+)
+
+
 def pdf_note() -> bytes:
     objects = [
         b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
@@ -269,6 +328,9 @@ def main() -> None:
     write("images/photo.webp", webp_with_exif(tiff_from_jpeg(jpeg)))
     write("images/still.avif", avif_still())
     write("images/art.psd", psd_with_layer())
+    write("images/IMG_0001.heic", heic_still(tiff_from_jpeg(jpeg)))
+    write("images/IMG_0001.mov", mov_clip())
+    write("images/clip.webm", WEBM_CLIP)
     write(
         "office/brief.docx",
         opc(

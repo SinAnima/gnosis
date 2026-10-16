@@ -91,6 +91,8 @@ fn is_unparsed_asset(object: &ObjectDescriptor) -> bool {
                 | "webp"
                 | "avif"
                 | "psd"
+                | "heic"
+                | "heif"
                 | "woff"
                 | "woff2"
                 | "ico"
@@ -109,9 +111,11 @@ fn candidate_category(object: &ObjectDescriptor, _proto: &ProtoData) -> String {
     let ext = object.extension.as_deref().unwrap_or("");
     match ext {
         "pdf" => "pdf-provider".into(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "psd" | "svg" => "image-provider".into(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "psd" | "heic" | "heif" | "svg" => {
+            "image-provider".into()
+        }
         "mp3" | "wav" | "flac" => "audio-provider".into(),
-        "mp4" | "mov" | "webm" => "video-provider".into(),
+        "mp4" | "mov" | "m4v" | "webm" => "video-provider".into(),
         "zip" | "tar" | "gz" | "tgz" | "7z" => "archive-provider".into(),
         "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" => "office-provider".into(),
         "go" => "future-treesitter".into(),
