@@ -179,8 +179,19 @@ EOF
     -c user.name="${GIT_AUTHOR_NAME:-github-actions[bot]}" \
     -c user.email="${GIT_AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}" \
     commit -m "Publish gnosis ${TAG}."
+  # GitHub's git HTTP endpoint accepts Basic auth and rejects a Bearer
+  # extraheader with 401. The runner then exits 128 with
+  # "could not read Username". Put the token in the push URL instead.
   if [[ -n "${GH_TOKEN:-}" ]]; then
-    git -C "${dest}" -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" push origin HEAD:main
+    local token
+    token="$(printf '%s' "${GH_TOKEN}" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    if [[ -z "${token}" ]]; then
+      echo "INSTALL_REPOS_TOKEN is empty after trimming." >&2
+      exit 1
+    fi
+    git -C "${dest}" \
+      -c credential.helper= \
+      push "https://x-access-token:${token}@github.com/SinAnima/${name}.git" HEAD:main
   else
     git -C "${dest}" push origin HEAD:main
   fi

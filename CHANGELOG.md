@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Install-channel push** — the release job authenticates to the Homebrew, Scoop, and asdf repositories with Basic auth. A Bearer header was rejected, and the runner then failed with `could not read Username`.
+
 ## [0.6.0] - 2026-10-16
 
 ### Added
