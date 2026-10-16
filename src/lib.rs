@@ -57,8 +57,8 @@ pub use provider::{ProviderRegistry, Support, UnderstandingProvider};
 pub use providers::{
     build_registry, default_registry, CSharpProvider, CppProvider, CsvProvider, ElixirProvider,
     ExifProvider, GenericMetadataProvider, HtmlProvider, JavaProvider, JavaScriptProvider,
-    JsonProvider, MarkdownProvider, PlainTextProvider, PythonProvider, RustProvider, TomlProvider,
-    TypeScriptProvider, YamlProvider,
+    JsonProvider, MarkdownProvider, OfficeProvider, PlainTextProvider, PythonProvider,
+    RustProvider, TomlProvider, TypeScriptProvider, YamlProvider,
 };
 #[cfg(feature = "llm")]
 pub use providers::{

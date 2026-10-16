@@ -117,7 +117,9 @@ fn candidate_category(object: &ObjectDescriptor, _proto: &ProtoData) -> String {
         "mp3" | "wav" | "flac" => "audio-provider".into(),
         "mp4" | "mov" | "m4v" | "webm" => "video-provider".into(),
         "zip" | "tar" | "gz" | "tgz" | "7z" => "archive-provider".into(),
-        "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" => "office-provider".into(),
+        "doc" | "docx" | "docm" | "xls" | "xlsx" | "xlsm" | "ppt" | "pptx" | "pptm" => {
+            "office-provider".into()
+        }
         "go" => "future-treesitter".into(),
         _ if object.media_type.starts_with("text/") => "text-provider".into(),
         _ => "binary-or-unknown".into(),

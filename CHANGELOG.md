@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-16
+
+### Added
+
+- **Office Open XML** — DOCX, XLSX, and PPTX yield package properties (`opc:title`, `opc:creator`, `opc:subject`, `opc:modified`, `opc:revision`, `opc:application`) and a structural graph: headings, sheets and formula source, and slides. A file whose graph was read is partial. Semantic coverage stays `not_attempted`.
+
 ### Fixed
 
 - **Install channels** — Homebrew, Scoop, and asdf are published from the GitHub release. Those repositories were empty, so the documented install commands had nothing to fetch.
+
+### Notes
+
+- Formulas are not calculated. Cached cell values are not stored. The A1 subset is `Sheet!A1`, quoted sheet names, `$` absolutes, and `A1:B2`. An external workbook reference stays on the formula with an unresolved diagnostic. Macros are not run, and `vbaProject.bin` is not loaded. Legacy `.doc`, `.xls`, and `.ppt` stay inventoried with `unsupported_legacy_format`. Encrypted packages stay a diagnostic. Those gaps are listed in `baoulo/library-gaps.md`.
 
 ## [0.5.2] - 2026-10-16
 
@@ -156,7 +166,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/SinAnima/gnosis/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/SinAnima/gnosis/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/SinAnima/gnosis/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/SinAnima/gnosis/compare/v0.4.2...v0.5.0

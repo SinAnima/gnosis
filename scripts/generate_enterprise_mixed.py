@@ -336,15 +336,36 @@ def main() -> None:
         opc(
             {
                 "[Content_Types].xml": CONTENT_TYPES.format(
-                    overrides='<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                    overrides="".join(
+                        [
+                            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
+                            '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+                            '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
+                        ]
+                    )
                 ),
-                "_rels/.rels": RELS.format(
-                    rel_type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
-                    target="word/document.xml",
-                ),
+                "_rels/.rels": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>
+""",
+                "docProps/core.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/">
+  <dc:title>Synthetic brief</dc:title>
+  <dc:creator>Gnosis</dc:creator>
+  <dc:subject>Catalog</dc:subject>
+  <cp:revision>3</cp:revision>
+  <dcterms:modified>2026-01-02T03:04:05Z</dcterms:modified>
+</cp:coreProperties>
+""",
+                "docProps/app.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Gnosis</Application></Properties>
+""",
                 "word/document.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body><w:p><w:r><w:t>Synthetic brief</w:t></w:r></w:p></w:body>
+  <w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Overview</w:t></w:r></w:p></w:body>
 </w:document>
 """,
             }
@@ -355,16 +376,30 @@ def main() -> None:
         opc(
             {
                 "[Content_Types].xml": CONTENT_TYPES.format(
-                    overrides='<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+                    overrides="".join(
+                        [
+                            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+                            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>',
+                        ]
+                    )
                 ),
                 "_rels/.rels": RELS.format(
                     rel_type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
                     target="xl/workbook.xml",
                 ),
+                "xl/_rels/workbook.xml.rels": RELS.format(
+                    rel_type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
+                    target="worksheets/sheet1.xml",
+                ),
                 "xl/workbook.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheets><sheet name="Prices" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></sheets>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Prices" sheetId="1" r:id="rId1"/></sheets>
 </workbook>
+""",
+                "xl/worksheets/sheet1.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="2"><c r="B2"><f>Prices!A1</f></c></row></sheetData>
+</worksheet>
 """,
             }
         ),
@@ -374,16 +409,33 @@ def main() -> None:
         opc(
             {
                 "[Content_Types].xml": CONTENT_TYPES.format(
-                    overrides='<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+                    overrides="".join(
+                        [
+                            '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+                            '<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>',
+                        ]
+                    )
                 ),
                 "_rels/.rels": RELS.format(
                     rel_type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
                     target="ppt/presentation.xml",
                 ),
+                "ppt/_rels/presentation.xml.rels": RELS.format(
+                    rel_type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
+                    target="slides/slide1.xml",
+                ),
                 "ppt/presentation.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:sldIdLst><p:sldId id="256" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></p:sldIdLst>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst>
 </p:presentation>
+""",
+                "ppt/slides/slide1.xml": """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld><p:spTree><p:sp>
+    <p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
+    <p:txBody><a:p><a:r><a:t>Synthetic</a:t></a:r></a:p></p:txBody>
+  </p:sp></p:spTree></p:cSld>
+</p:sld>
 """,
             }
         ),
