@@ -6,9 +6,12 @@
 
 mod avif;
 mod exif;
+mod heif;
+mod isobmff;
 mod png;
 mod psd;
 mod signature;
+mod webm;
 mod webp;
 
 use crate::connectors::{ObjectDescriptor, ProtoData};
@@ -17,11 +20,14 @@ use crate::status::UnderstandingStatus;
 use crate::GnosisError;
 pub use avif::AvifExtractor;
 pub use exif::ExifExtractor;
+use heif::HeifExtractor;
+use isobmff::IsobmffExtractor;
 pub use png::PngExtractor;
 pub use psd::PsdExtractor;
 use serde::{Deserialize, Serialize};
 pub use signature::SignatureExtractor;
 use std::path::Path;
+use webm::WebmExtractor;
 pub use webp::WebpExtractor;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -145,8 +151,10 @@ pub fn sniff(bytes: &[u8], declared_media: &str) -> FileSignature {
         "webp"
     } else if bytes.starts_with(b"8BPS") {
         "psd"
-    } else if is_avif(bytes) {
-        "avif"
+    } else if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        "webm"
+    } else if let Some(kind) = sniff_ftyp(bytes) {
+        kind
     } else if bytes.starts_with(b"%PDF") {
         "pdf"
     } else if bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06") {
@@ -176,7 +184,11 @@ impl IntrinsicData {
     pub fn creation_time(&self) -> Vec<&MetadataFact> {
         self.facts
             .iter()
-            .filter(|fact| fact.key == "exif:DateTimeOriginal" || fact.key == "fs:mtime")
+            .filter(|fact| {
+                fact.key == "exif:DateTimeOriginal"
+                    || fact.key == "fs:mtime"
+                    || fact.key == "isobmff:creation_time"
+            })
             .collect()
     }
 }
@@ -219,14 +231,22 @@ pub trait IntrinsicExtractor: Send + Sync {
     fn extract(&self, ctx: &ExtractContext<'_>) -> crate::Result<Vec<MetadataFact>>;
 }
 
-/// `ftyp` major brand `avif` or `avis`.
-fn is_avif(bytes: &[u8]) -> bool {
-    bytes.len() >= 12
-        && &bytes[4..8] == b"ftyp"
-        && (bytes[8..12] == *b"avif" || bytes[8..12] == *b"avis")
+/// Brand order inside a size-checked `ftyp`: AVIF, then HEIF, then MOV/MP4.
+fn sniff_ftyp(bytes: &[u8]) -> Option<&'static str> {
+    let brands = heif::ftyp_brands(bytes)?;
+    let has = |name: &[u8; 4]| brands.iter().any(|brand| brand == name);
+    if has(b"avif") || has(b"avis") {
+        Some("avif")
+    } else if has(b"heic") || has(b"heif") || has(b"mif1") {
+        Some("heif")
+    } else if has(b"qt  ") || has(b"mp42") || has(b"mp41") || has(b"isom") {
+        Some("isobmff")
+    } else {
+        None
+    }
 }
 
-fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 6] {
+fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 9] {
     [
         &SignatureExtractor,
         &ExifExtractor,
@@ -234,6 +254,9 @@ fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 6] {
         &WebpExtractor,
         &AvifExtractor,
         &PsdExtractor,
+        &HeifExtractor,
+        &IsobmffExtractor,
+        &WebmExtractor,
     ]
 }
 
@@ -724,14 +747,8 @@ mod tests {
             sniff(b"RIFF\x00\x00\x00\x00WEBP", "image/webp").sniffed,
             "webp"
         );
-        assert_eq!(
-            sniff(b"\x00\x00\x00\x18ftypavif", "image/avif").sniffed,
-            "avif"
-        );
-        assert_eq!(
-            sniff(b"\x00\x00\x00\x18ftypavis", "image/avif").sniffed,
-            "avif"
-        );
+        assert_eq!(sniff(&ftyp(16, b"avif"), "image/avif").sniffed, "avif");
+        assert_eq!(sniff(&ftyp(16, b"avis"), "image/avif").sniffed, "avif");
         assert_eq!(
             sniff(b"8BPS\x00\x01", "image/vnd.adobe.photoshop").sniffed,
             "psd"
@@ -920,5 +937,161 @@ mod tests {
             fact(&record, "psd:layers").value,
             FactValue::Array(vec!["Ink".into()])
         );
+    }
+
+    fn ftyp(size: u32, brand: &[u8; 4]) -> Vec<u8> {
+        let mut bytes = size.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(brand);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        while (bytes.len() as u32) < size {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    #[test]
+    fn sniff_heif_isobmff_and_webm() {
+        assert_eq!(sniff(&ftyp(16, b"heic"), "image/heic").sniffed, "heif");
+        assert_eq!(sniff(&ftyp(16, b"mif1"), "image/heif").sniffed, "heif");
+        let mut avif_compat = ftyp(20, b"mif1");
+        avif_compat[16..20].copy_from_slice(b"avif");
+        assert_eq!(sniff(&avif_compat, "image/avif").sniffed, "avif");
+        assert_eq!(
+            sniff(&ftyp(16, b"qt  "), "video/quicktime").sniffed,
+            "isobmff"
+        );
+        assert_eq!(sniff(&ftyp(16, b"isom"), "video/mp4").sniffed, "isobmff");
+        assert_eq!(
+            sniff(&[0x1A, 0x45, 0xDF, 0xA3], "video/webm").sniffed,
+            "webm"
+        );
+    }
+
+    #[test]
+    fn truncated_and_huge_ftyp_do_not_allocate() {
+        let mut truncated = 64u32.to_be_bytes().to_vec();
+        truncated.extend_from_slice(b"ftypheic");
+        assert!(truncated.len() < 64);
+        assert_eq!(sniff(&truncated, "image/heic").sniffed, "unknown");
+
+        let mut huge = u32::MAX.to_be_bytes().to_vec();
+        huge.extend_from_slice(b"ftypheic\x00\x00\x00\x00");
+        assert_eq!(sniff(&huge, "image/heic").sniffed, "unknown");
+
+        let mut object = sample_object();
+        object.extension = Some("heic".into());
+        object.media_type = "image/heic".into();
+        let proto = ProtoData {
+            filename: "huge.heic".into(),
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &huge);
+        assert_eq!(record.intrinsic.coverage, Coverage::Unreadable);
+        assert!(record.proto.filename == "huge.heic");
+    }
+
+    #[test]
+    fn heic_keeps_brand_exif_and_mtime() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/IMG_0001.heic").unwrap();
+        let mut object = sample_object();
+        object.extension = Some("heic".into());
+        object.media_type = "image/heic".into();
+        let proto = ProtoData {
+            filename: "IMG_0001.heic".into(),
+            modified: object.modified,
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "heif");
+        assert_eq!(
+            fact(&record, "heif:brand").value,
+            FactValue::String("heic".into())
+        );
+        assert_eq!(fact(&record, "heif:width").value, FactValue::Integer(1));
+        assert_eq!(fact(&record, "heif:height").value, FactValue::Integer(1));
+        assert!(matches!(
+            fact(&record, "exif:DateTimeOriginal").value,
+            FactValue::Timestamp(_)
+        ));
+        assert!(record
+            .intrinsic
+            .facts
+            .iter()
+            .any(|item| item.key == "fs:mtime"));
+        assert!(record
+            .intrinsic
+            .facts
+            .iter()
+            .any(|item| { item.key.contains("GPS") && item.sensitive }));
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+    }
+
+    #[test]
+    fn mov_duration_dimensions_and_sensitive_gps() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/IMG_0001.mov").unwrap();
+        let mut object = sample_object();
+        object.extension = Some("mov".into());
+        object.media_type = "video/quicktime".into();
+        let proto = ProtoData {
+            filename: "IMG_0001.mov".into(),
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "isobmff");
+        assert_eq!(
+            fact(&record, "isobmff:duration_ms").value,
+            FactValue::Integer(1500)
+        );
+        assert_eq!(
+            fact(&record, "isobmff:width").value,
+            FactValue::Integer(320)
+        );
+        assert_eq!(
+            fact(&record, "isobmff:height").value,
+            FactValue::Integer(240)
+        );
+        assert!(matches!(
+            fact(&record, "isobmff:creation_time").value,
+            FactValue::Timestamp(_)
+        ));
+        let latitude = fact(&record, "isobmff:gps_latitude");
+        assert!(latitude.sensitive);
+        assert_eq!(latitude.value, FactValue::Decimal("27.128100".into()));
+        assert!(record
+            .intrinsic
+            .creation_time()
+            .iter()
+            .any(|item| item.key == "isobmff:creation_time"));
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+    }
+
+    #[test]
+    fn webm_duration_when_the_header_parses() {
+        let bytes = std::fs::read("fixtures/enterprise-mixed/images/clip.webm").unwrap();
+        let mut object = sample_object();
+        object.extension = Some("webm".into());
+        object.media_type = "video/webm".into();
+        let proto = ProtoData {
+            filename: "clip.webm".into(),
+            ..ProtoData::default()
+        };
+        let record = extract_intrinsic(&object, &proto, &bytes);
+        assert_eq!(record.intrinsic.signature.sniffed, "webm");
+        assert_eq!(
+            fact(&record, "webm:duration_ms").value,
+            FactValue::Integer(12000)
+        );
+        assert_eq!(fact(&record, "webm:width").value, FactValue::Integer(640));
+        assert_eq!(fact(&record, "webm:height").value, FactValue::Integer(480));
+        assert_eq!(record.stages.semantic, Coverage::NotAttempted);
+
+        let broken = extract_intrinsic(&object, &proto, &[0x1A, 0x45, 0xDF, 0xA3]);
+        assert_eq!(broken.intrinsic.coverage, Coverage::NotAttempted);
+        assert!(broken
+            .intrinsic
+            .facts
+            .iter()
+            .all(|item| !item.key.starts_with("webm:")));
     }
 }

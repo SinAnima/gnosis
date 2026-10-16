@@ -69,18 +69,18 @@ One scan turns a source into that record:
 
 1. It discovers files in a local folder, keys under an `s3://` prefix, or HTML pages linked from an `http://` or `https://` start URL.
 2. It reads each file up to `--max-size` (2 MiB by default).
-3. It records intrinsic facts that sit beside the structural reader: the file signature, EXIF when the file is JPEG or TIFF, and container metadata for PNG, WebP, AVIF, and PSD.
+3. It records intrinsic facts that sit beside the structural reader: the file signature, EXIF when the file is JPEG or TIFF, container metadata for PNG, WebP, AVIF, PSD, and HEIC, and container metadata for MOV, MP4, M4V, and WebM.
 4. It picks one structural reader. A full claim beats a partial one. Tree-sitter reads C, C++, Rust, Elixir, JavaScript, TypeScript, Python, Java, and C#. Other readers cover Markdown, HTML, plain text, JSON, YAML, TOML, and CSV.
 5. It saves the entities and relationships in `.gnosis/knowledge.redb`. A later scan skips a file whose contents and reader version are unchanged.
 6. With `--export`, it writes `knowledge.okf/`: one Markdown page for each object, entity, and relationship.
 
-Each file ends as **understood**, **partial**, **unknown**, or **failed**. JPEG and TIFF that carry EXIF, and PNG, WebP, AVIF, and PSD whose container metadata was read, are partial. Those facts are metadata, not a reading of the scene.
+Each file ends as **understood**, **partial**, **unknown**, or **failed**. JPEG and TIFF that carry EXIF, and PNG, WebP, AVIF, PSD, HEIC, MOV, MP4, and WebM whose container metadata was read, are partial. Those facts are metadata, not a reading of the scene or the clip.
 
 ## How a scan works
 
 Discovery and analysis are separate. Discovery enqueues one durable job per file in `.gnosis/jobs.redb`. A worker reads the bytes, sniffs the format from the magic bytes and the extension, runs every matching intrinsic extractor, then runs the single winning reader. Each finished file is written to the knowledge file immediately, so a crash keeps the files already completed. The terminal UI follows the same event stream a script sees.
 
-Readers are deterministic. Tree-sitter walks a grammar and does not invoke that language's compiler. Document and data readers use small parsers. The image readers are pure Rust. They read metadata from JPEG, TIFF, PNG, WebP, AVIF, and PSD, and they do not decode pixels. GIF and SVG are inventoried and not decoded. An optional model, enabled with `--features llm` at build time and `--llm` on the scan, may claim files the built-in readers leave alone. Those claims stay inferences until you accept them. A reader that fully understands a file always wins over the model.
+Readers are deterministic. Tree-sitter walks a grammar and does not invoke that language's compiler. Document and data readers use small parsers. The image and video readers are pure Rust. They read metadata from JPEG, TIFF, PNG, WebP, AVIF, PSD, HEIC, MOV, MP4, M4V, and WebM, and they do not decode pixels or frames. GIF and SVG are inventoried and not decoded. An optional model, enabled with `--features llm` at build time and `--llm` on the scan, may claim files the built-in readers leave alone. Those claims stay inferences until you accept them. A reader that fully understands a file always wins over the model.
 
 The next sections are how you run that scan.
 
@@ -112,7 +112,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.5.1
+mise use -g github:SinAnima/gnosis@0.5.2
 ```
 
 ### asdf
@@ -121,12 +121,12 @@ From [SinAnima/asdf-gnosis](https://github.com/SinAnima/asdf-gnosis):
 
 ```bash
 asdf plugin add gnosis https://github.com/SinAnima/asdf-gnosis.git
-asdf install gnosis 0.5.1
+asdf install gnosis 0.5.2
 ```
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.1`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.2`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -370,10 +370,13 @@ Each object is capped by `--max-size` (2 MiB by default).
 | WebP | `.webp` | Width, height, EXIF when a chunk is present, and whether an XMP packet is present. The packet is not parsed. The scan status is partial |
 | AVIF | `.avif` | Width, height, bit depth, and whether the sequence header says the image is a still. The scan status is partial |
 | PSD | `.psd` | Width, height, depth, color mode, and layer names. The scan status is partial |
+| HEIC and HEIF | `.heic`, `.heif` | Brand, width, height, and EXIF including GPS. The scan status is partial |
+| MOV, MP4, and M4V | `.mov`, `.mp4`, `.m4v` | Duration, width, height, creation time, and GPS when the container stores them. The scan status is partial |
+| WebM | `.webm` | Duration, width, and height when the header parses. The scan status is partial |
 
 **Scanned, then left as unknown or partial**
 
-GIF and SVG are listed in the inventory with a guess such as `image-provider` and are not decoded. CSS and fonts are recorded and not read as text. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and metadata facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read. Structured XMP, IPTC, ICC profile bodies, and AVIF EXIF are not read.
+GIF and SVG are listed in the inventory with a guess such as `image-provider` and are not decoded. A WebM whose header does not parse stays on `video-provider` with coverage `not_attempted`. CSS and fonts are recorded and not read as text. PDFs, Office files, and other binaries are inventoried the same way. Go, PHP, Ruby, Kotlin, and Swift stay inventoried until a reader claims them. `gnosis inspect <file> --json` prints acquisition and metadata facts separately from structural entities. Semantic coverage stays `not_attempted` when only those facts were read. Structured XMP, IPTC, ICC profile bodies, AVIF EXIF, the Apple Live Photo identifier, codec fourcc names, and video rotation are not read.
 
 **Optional model**
 
@@ -781,7 +784,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.5.1. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.5.2. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -792,7 +795,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.4.2 | Baseline | A regression harness and a written gap matrix. No new readers |
 | 0.5.0 | Intrinsic evidence | `gnosis inspect`, namespaced EXIF and signature facts beside the winning reader, and Tree-sitter for JavaScript, TypeScript, Python, Java, and C# |
 | 0.5.1 | Image metadata | PNG, WebP, AVIF, and PSD container metadata. Still not a reading of the picture |
-| 0.5.2 | Phone media | HEIC/HEIF stills and video container metadata (MOV, MP4, M4V). No frame decode and no scene understanding |
+| 0.5.2 | Phone media | HEIC/HEIF stills and MOV, MP4, M4V, and WebM container metadata. No frame decode, no Live Photo edge, no codec fourcc, and no rotation |
 | 0.6.0 | Teach Gnosis | A stable way to add readers and domain rules without changing Gnosis itself |
 | 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
