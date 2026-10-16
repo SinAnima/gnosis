@@ -233,25 +233,55 @@ WEBM_CLIP = bytes.fromhex(
 )
 
 
-def pdf_note() -> bytes:
-    objects = [
-        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>\nendobj\n",
-        b"4 0 obj\n<< /Length 55 >>\nstream\nBT /F1 12 Tf 72 72 Td (Synthetic note) Tj ET\nendstream\nendobj\n",
-    ]
+def classic_pdf(objects, root=1, info=None):
     body = b"%PDF-1.4\n"
-    offsets = [0]
-    for obj in objects:
+    offsets = []
+    for index, obj in enumerate(objects, start=1):
         offsets.append(len(body))
-        body += obj
+        body += f"{index} 0 obj\n".encode() + obj
+        if not obj.endswith(b"\n"):
+            body += b"\n"
+        body += b"endobj\n"
     xref = len(body)
-    body += f"xref\n0 {len(offsets)}\n".encode()
+    size = len(objects) + 1
+    body += f"xref\n0 {size}\n".encode()
     body += b"0000000000 65535 f \n"
-    for offset in offsets[1:]:
+    for offset in offsets:
         body += f"{offset:010d} 00000 n \n".encode()
-    body += f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    extra = f"/Info {info} 0 R " if info else ""
+    body += (
+        f"trailer\n<< /Size {size} /Root {root} 0 R {extra}>>\nstartxref\n{xref}\n%%EOF\n".encode()
+    )
     return body
+
+
+def pdf_stream(data):
+    return b"<< /Length %d >>\nstream\n" % len(data) + data + b"endstream"
+
+
+def pdf_note() -> bytes:
+    text = b"BT /F1 12 Tf 72 72 Td (Synthetic note) Tj ET\n"
+    return classic_pdf(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>",
+            pdf_stream(text),
+            b"<< /Title (Synthetic note) /Author (Gnosis) /Subject (Fixture) /Creator (gnosis) /Producer (gnosis) /CreationDate (D:20260102030405Z) /ModDate (D:20260102030405Z) >>",
+        ],
+        info=5,
+    )
+
+
+def pdf_scan() -> bytes:
+    return classic_pdf(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>",
+            pdf_stream(b"q Q\n"),
+        ]
+    )
 
 
 def opc(parts: dict[str, str]) -> bytes:
@@ -441,6 +471,7 @@ def main() -> None:
         ),
     )
     write("office/note.pdf", pdf_note())
+    write("office/scan.pdf", pdf_scan())
     write("archives/broken.zip", b"PK\x03\x04" + b"\x00" * 16)
     write("proprietary/widget.bin", b"GNOS\x00widget")
     print(f"wrote {OUT}")

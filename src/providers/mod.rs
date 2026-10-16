@@ -19,6 +19,7 @@ mod image;
 #[cfg(feature = "llm")]
 mod llm;
 pub(crate) mod office;
+pub(crate) mod pdf;
 mod util;
 
 pub use code::{
@@ -35,6 +36,7 @@ pub use llm::{
     LlmSemanticProvider, LlmStamp, LlmVendor, OllamaAdapter, OpenAiAdapter, StaticBackend,
 };
 pub use office::OfficeProvider;
+pub use pdf::PdfProvider;
 
 use crate::config::{LlmConfig, LlmMetrics};
 use crate::ProviderRegistry;
@@ -94,6 +96,7 @@ pub fn build_registry(
     registry.register(Box::new(TomlProvider));
     registry.register(Box::new(CsvProvider));
     registry.register(Box::new(OfficeProvider));
+    registry.register(Box::new(PdfProvider));
 
     #[cfg(feature = "llm")]
     if let Some(cfg) = llm {

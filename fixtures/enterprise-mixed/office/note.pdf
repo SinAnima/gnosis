@@ -9,20 +9,24 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>
 endobj
 4 0 obj
-<< /Length 55 >>
+<< /Length 45 >>
 stream
 BT /F1 12 Tf 72 72 Td (Synthetic note) Tj ET
 endstream
 endobj
+5 0 obj
+<< /Title (Synthetic note) /Author (Gnosis) /Subject (Fixture) /Creator (gnosis) /Producer (gnosis) /CreationDate (D:20260102030405Z) /ModDate (D:20260102030405Z) >>
+endobj
 xref
-0 5
+0 6
 0000000000 65535 f 
 0000000009 00000 n 
 0000000058 00000 n 
 0000000115 00000 n 
 0000000202 00000 n 
+0000000296 00000 n 
 trailer
-<< /Size 5 /Root 1 0 R >>
+<< /Size 6 /Root 1 0 R /Info 5 0 R >>
 startxref
-296
+477
 %%EOF

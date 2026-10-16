@@ -7,7 +7,14 @@ all-features = true
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # zip 6.0.0. The patched line is zip >= 9, which declares rust-version 1.88.
+    # These three advisories are ZipArchive::extract and ZipStreamReader::extract.
+    # Office packages are read into memory with by_index; extract is not called.
+    { id = "RUSTSEC-2026-0367", reason = "extract() is unused; zip 9 needs Rust 1.88" },
+    { id = "RUSTSEC-2026-0368", reason = "extract() is unused; zip 9 needs Rust 1.88" },
+    { id = "RUSTSEC-2026-0369", reason = "extract() is unused; zip 9 needs Rust 1.88" },
+]
 
 [licenses]
 version = 2

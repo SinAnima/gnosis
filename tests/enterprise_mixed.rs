@@ -1,8 +1,8 @@
 //! Baseline harness for `fixtures/enterprise-mixed`.
 //!
 //! The golden file is the oracle, so the scan copies the tree and leaves
-//! `expected.json` out. Office Open XML is partial structural coverage.
-//! PDF, the broken archive, and the proprietary binary stay expected gaps.
+//! `expected.json` out. Office Open XML and PDF are partial structural coverage.
+//! The broken archive and the proprietary binary stay expected gaps.
 
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
@@ -190,6 +190,7 @@ fn enterprise_mixed_matches_the_golden_and_skips_a_second_scan() {
         "office/book.xlsx",
         "office/deck.pptx",
         "office/note.pdf",
+        "office/scan.pdf",
         "archives/broken.zip",
         "proprietary/widget.bin",
     ] {

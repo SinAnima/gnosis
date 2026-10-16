@@ -286,7 +286,7 @@ pub struct ScanMetrics {
     pub crawl_failed: AtomicU64,
     pub crawl_bytes: AtomicU64,
     counted: std::sync::Mutex<std::collections::HashSet<String>>,
-    /// Shared with [`crate::providers::LlmSemanticProvider`] when LLM is enabled.
+    /// Shared with `LlmSemanticProvider` when the `llm` feature is enabled.
     pub llm: std::sync::Arc<LlmMetrics>,
     started: std::sync::Mutex<Option<Instant>>,
 }

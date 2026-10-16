@@ -410,13 +410,37 @@
     {
       "entities": [
         {
-          "kind": "unknown_object",
-          "name": "note.pdf"
+          "kind": "document",
+          "name": "Synthetic note"
+        },
+        {
+          "kind": "page",
+          "name": "1"
         }
       ],
       "path": "office/note.pdf",
-      "provider": "generic-metadata",
-      "relationships": [],
+      "provider": "pdf",
+      "relationships": [
+        "contains"
+      ],
+      "status": "partial"
+    },
+    {
+      "entities": [
+        {
+          "kind": "document",
+          "name": "scan"
+        },
+        {
+          "kind": "page",
+          "name": "1"
+        }
+      ],
+      "path": "office/scan.pdf",
+      "provider": "pdf",
+      "relationships": [
+        "contains"
+      ],
       "status": "partial"
     },
     {

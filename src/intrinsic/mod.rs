@@ -9,6 +9,7 @@ mod exif;
 mod heif;
 mod isobmff;
 mod opc;
+mod pdf;
 mod png;
 mod psd;
 mod signature;
@@ -24,6 +25,7 @@ pub use exif::ExifExtractor;
 use heif::HeifExtractor;
 use isobmff::IsobmffExtractor;
 use opc::OpcExtractor;
+use pdf::PdfExtractor;
 pub use png::PngExtractor;
 pub use psd::PsdExtractor;
 use serde::{Deserialize, Serialize};
@@ -191,6 +193,7 @@ impl IntrinsicData {
                     || fact.key == "fs:mtime"
                     || fact.key == "isobmff:creation_time"
                     || fact.key == "opc:modified"
+                    || fact.key == "pdf:creation_date"
             })
             .collect()
     }
@@ -249,7 +252,7 @@ fn sniff_ftyp(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 10] {
+fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 11] {
     [
         &SignatureExtractor,
         &ExifExtractor,
@@ -261,6 +264,7 @@ fn registered_extractors() -> [&'static dyn IntrinsicExtractor; 10] {
         &IsobmffExtractor,
         &WebmExtractor,
         &OpcExtractor,
+        &PdfExtractor,
     ]
 }
 
