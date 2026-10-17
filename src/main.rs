@@ -26,6 +26,7 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Discover and analyze a local directory, Git repository, or S3 bucket
     Scan {
@@ -52,6 +53,24 @@ enum Commands {
         /// AWS region for `s3://` scans (otherwise default credential chain)
         #[arg(long)]
         region: Option<String>,
+        /// S3-compatible endpoint, for example `http://127.0.0.1:9000` (path-style)
+        #[arg(long)]
+        s3_endpoint: Option<String>,
+        /// Skip TLS verification for `--s3-endpoint`
+        #[arg(long)]
+        s3_insecure: bool,
+        /// HeadObject and GetObjectTagging for each key
+        #[arg(long)]
+        s3_inspect: bool,
+        /// List versions and keep the latest live version. A delete marker is not downloaded
+        #[arg(long)]
+        s3_versions: bool,
+        /// Inventory listing facts and do not call GetObject
+        #[arg(long)]
+        s3_metadata_only: bool,
+        /// Cap on list pages, head, tag, and get (`0` means no cap)
+        #[arg(long, default_value_t = 0)]
+        s3_max_requests: u64,
         /// Persistent job queue database (redb). Default: `.gnosis/jobs.redb`
         #[arg(long, default_value = ".gnosis/jobs.redb")]
         job_db: PathBuf,
@@ -312,6 +331,12 @@ fn main() -> Result<()> {
             output,
             export,
             region,
+            s3_endpoint,
+            s3_insecure,
+            s3_inspect,
+            s3_versions,
+            s3_metadata_only,
+            s3_max_requests,
             job_db,
             max_attempts,
             retry_base_ms,
@@ -339,6 +364,14 @@ fn main() -> Result<()> {
             output,
             export,
             region,
+            gnosis::config::S3ScanOptions {
+                endpoint: s3_endpoint,
+                insecure: s3_insecure,
+                inspect: s3_inspect,
+                versions: s3_versions,
+                metadata_only: s3_metadata_only,
+                max_requests: s3_max_requests,
+            },
             job_db,
             RetryPolicy::new(max_attempts, retry_base_ms, retry_max_ms),
             llm,
@@ -577,6 +610,7 @@ fn run_watch(
             PathBuf::from("knowledge.okf"),
             false,
             None,
+            gnosis::config::S3ScanOptions::default(),
             job_db.clone(),
             RetryPolicy::new(3, 250, 30_000),
             None,
@@ -902,6 +936,7 @@ fn run_scan(
     output: PathBuf,
     auto_export: bool,
     region: Option<String>,
+    s3: gnosis::config::S3ScanOptions,
     job_db: PathBuf,
     retry: RetryPolicy,
     llm: Option<String>,
@@ -920,8 +955,15 @@ fn run_scan(
             if web.any() {
                 bail!("web crawl flags apply only to http(s) scans");
             }
+            if s3.insecure && s3.endpoint.is_none() {
+                bail!("--s3-insecure requires --s3-endpoint");
+            }
             let location = parse_s3_uri(&path).map_err(|e| anyhow::anyhow!(e))?;
-            ScanConfig::with_source(ScanSource::S3 { location, region })
+            ScanConfig::with_source(ScanSource::S3 {
+                location,
+                region,
+                options: s3,
+            })
         }
         gnosis::connectors::web::TargetClass::Web(start_url) => {
             let mut policy =
@@ -1173,6 +1215,11 @@ const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
 
 Artifacts are processed as durable jobs (default store: .gnosis/jobs.redb).
 S3 uses the default AWS credential chain; pass --region to override.
+A custom endpoint (--s3-endpoint) uses path-style addressing. TLS stays
+verified unless --s3-insecure is set for that endpoint. The default scan
+uses the listing. --s3-inspect, --s3-versions, and GetObject are opt-in.
+--s3-metadata-only skips the body. --s3-max-requests caps list, head, tag,
+and get calls (0 means no cap).
 LLM extraction requires a build with `--features llm`. It is off unless you pass `--llm`.
 The model id selects an adapter: OpenAI (`gpt-…`), Anthropic (`claude-…`), Gemini (`gemini-…`), or Ollama (anything else, including `tinyllama:latest`). Prefix `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
 Full deterministic providers still win. LLM claims stay `review=pending` until accepted.

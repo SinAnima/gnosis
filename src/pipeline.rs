@@ -5,6 +5,7 @@ use crate::connectors::filesystem::{
 };
 use crate::connectors::git::GitContext;
 use crate::connectors::s3::{parse_s3_uri, AwsS3Backend, S3Backend, S3Connector};
+use crate::connectors::types::S3ProtoData;
 use crate::connectors::types::{ObjectDescriptor, ProtoData};
 use crate::connectors::web::WebAcquirer;
 use crate::content::BytesContentReader;
@@ -14,6 +15,7 @@ use crate::jobs::{
     prepare_rerun, prepare_rerun_scan, AnalyzeObjectArgs, AnalyzeObjectResult, Job, JobExecutor,
     JobStore, JobWorkerPool, RedbJobStore, RerunReport, KIND_ANALYZE_OBJECT,
 };
+use crate::knowledge::{Diagnostic, DiagnosticSeverity};
 use crate::knowledge_db::{
     classify_object, collect_deps, dep_matches, unix_ms, Classify, ClassifyInput, KnowledgeDb,
     PersistedObject, ReanalyzeReason, Snapshot, SnapshotObject,
@@ -38,6 +40,7 @@ pub struct Pipeline {
     job_store: Arc<dyn JobStore>,
     knowledge: Arc<KnowledgeDb>,
     web_acquirer: Option<Arc<dyn crate::connectors::web::WebAcquirer>>,
+    s3_backend: Option<Arc<dyn S3Backend>>,
 }
 
 pub struct PipelineHandle {
@@ -75,11 +78,11 @@ impl PipelineHandle {
 #[derive(Clone)]
 enum ObjectAccess {
     Filesystem,
-    S3(Arc<S3Connector<AwsS3Backend>>),
+    S3(Arc<S3Connector>),
     Web(crate::connectors::web::BodyCache),
     /// Filesystem + optional S3 backend (for job reruns with mixed sources).
     Mixed {
-        s3: Option<Arc<AwsS3Backend>>,
+        s3: Option<Arc<dyn S3Backend>>,
         web: crate::connectors::web::BodyCache,
     },
 }
@@ -154,6 +157,27 @@ impl ObjectAccess {
             Self::Web(cache) => cache.get(id),
             Self::Mixed { web, .. } => web.get(id),
             Self::Filesystem | Self::S3(_) => None,
+        }
+    }
+
+    fn s3_proto(&self, object: &ObjectDescriptor) -> Option<S3ProtoData> {
+        match self {
+            Self::S3(connector) => connector.proto_for(&object.id),
+            _ => None,
+        }
+    }
+
+    fn s3_notes(&self, object: &ObjectDescriptor) -> Vec<String> {
+        match self {
+            Self::S3(connector) => connector.notes_for(&object.id),
+            _ => Vec::new(),
+        }
+    }
+
+    fn withheld_body(&self, object: &ObjectDescriptor) -> bool {
+        match self {
+            Self::S3(connector) => connector.withheld_body(object),
+            _ => false,
         }
     }
 }
@@ -355,7 +379,14 @@ impl Pipeline {
             job_store,
             knowledge,
             web_acquirer: None,
+            s3_backend: None,
         }
+    }
+
+    /// Use a memory or other test backend instead of the AWS client.
+    pub fn with_s3_backend(mut self, backend: Arc<dyn S3Backend>) -> Self {
+        self.s3_backend = Some(backend);
+        self
     }
 
     /// Use a test acquirer instead of the production crawler.
@@ -453,7 +484,7 @@ impl Pipeline {
 
         let access = ObjectAccess::Mixed {
             s3: if needs_s3 {
-                Some(Arc::new(AwsS3Backend::new(region)?))
+                Some(Arc::new(AwsS3Backend::new(region, None, false)?) as Arc<dyn S3Backend>)
             } else {
                 None
             },
@@ -590,8 +621,20 @@ impl Pipeline {
                 };
                 (objects, ObjectAccess::Filesystem)
             }
-            ScanSource::S3 { location, region } => {
-                let backend = Arc::new(AwsS3Backend::new(region.as_deref())?);
+            ScanSource::S3 {
+                location,
+                region,
+                options,
+            } => {
+                let backend: Arc<dyn S3Backend> = if let Some(backend) = &self.s3_backend {
+                    Arc::clone(backend)
+                } else {
+                    Arc::new(AwsS3Backend::new(
+                        region.as_deref(),
+                        options.endpoint.as_deref(),
+                        options.insecure,
+                    )?)
+                };
                 let connector = Arc::new(S3Connector::new(
                     location.clone(),
                     self.config.clone(),
@@ -814,9 +857,22 @@ impl Pipeline {
             input.reanalyze = self.config.reanalyze;
             let mut decision = classify_object(&input);
             if matches!(decision, Classify::NeedBytes) {
-                let bytes = access.read_bytes(object, self.config.max_object_size)?;
-                input.fingerprint = Some(fingerprint_bytes(&bytes));
-                decision = classify_object(&input);
+                let over_size =
+                    path_looks_like_s3(&object.path) && object.size > self.config.max_object_size;
+                if access.withheld_body(object) || over_size {
+                    decision = Classify::Analyze(ReanalyzeReason::Content);
+                } else {
+                    match access.read_bytes(object, self.config.max_object_size) {
+                        Ok(bytes) => {
+                            input.fingerprint = Some(fingerprint_bytes(&bytes));
+                            decision = classify_object(&input);
+                        }
+                        Err(err) if err.to_string().contains("s3 size limit") => {
+                            decision = Classify::Analyze(ReanalyzeReason::Content);
+                        }
+                        Err(err) => return Err(err),
+                    }
+                }
             }
             match decision {
                 Classify::Keep { touch_stat } => {
@@ -1095,7 +1151,11 @@ fn process_object(
         .bytes_considered
         .fetch_add(object.size, Ordering::Relaxed);
 
-    let bytes = access.read_bytes(object, config.max_object_size)?;
+    let bytes = match access.read_bytes(object, config.max_object_size) {
+        Ok(bytes) => bytes,
+        Err(err) if err.to_string().contains("s3 size limit") => Vec::new(),
+        Err(err) => return Err(err),
+    };
     let fingerprint = fingerprint_bytes(&bytes);
     let page = access.page(object.id.as_str());
 
@@ -1125,9 +1185,16 @@ fn process_object(
         http_status: page.as_ref().map(|p| p.status),
         requested_url: page.as_ref().map(|p| p.requested_url.clone()),
         final_url: page.as_ref().map(|p| p.final_url.clone()),
+        s3: access.s3_proto(object),
     };
 
     let mut evidence = crate::intrinsic::extract_intrinsic(object, &proto, &bytes);
+    for message in access.s3_notes(object) {
+        evidence.intrinsic.diagnostics.push(Diagnostic {
+            severity: DiagnosticSeverity::Warning,
+            message,
+        });
+    }
 
     let (provider, support) = match providers.select(object, &proto) {
         Some(pair) => pair,
@@ -1330,6 +1397,10 @@ fn process_object(
         result.status,
         result.classification_reason.clone(),
     );
+    if access.withheld_body(object) && evidence.user_status == UnderstandingStatus::Understood {
+        evidence.user_status = UnderstandingStatus::PartiallyUnderstood;
+        evidence.status_reason = Some("s3 listing only; object body not read".into());
+    }
     let status = evidence.user_status;
     let classification_reason = evidence.status_reason.clone();
     let version = provider.version().to_string();

@@ -430,7 +430,43 @@ fn acquisition_facts(proto: &ProtoData) -> Vec<MetadataFact> {
             sensitive: false,
         });
     }
+    if let Some(s3) = &proto.s3 {
+        push_s3(&mut facts, "s3:storage_class", s3.storage_class.as_deref());
+        if let Some(etag) = &s3.etag {
+            push_s3(&mut facts, "s3:etag", Some(etag.as_str()));
+            let kind = if s3.etag_kind.is_empty() {
+                crate::connectors::types::etag_kind(etag)
+            } else {
+                s3.etag_kind.as_str()
+            };
+            push_s3(&mut facts, "s3:etag_kind", Some(kind));
+        }
+        push_s3(&mut facts, "s3:version_id", s3.version_id.as_deref());
+        for (key, value) in &s3.user_metadata {
+            push_s3(&mut facts, &format!("s3:meta:{key}"), Some(value.as_str()));
+        }
+        for (key, value) in &s3.tags {
+            push_s3(&mut facts, &format!("s3:tag:{key}"), Some(value.as_str()));
+        }
+    }
     facts
+}
+
+fn push_s3(facts: &mut Vec<MetadataFact>, key: &str, value: Option<&str>) {
+    let Some(value) = value.filter(|text| !text.is_empty()) else {
+        return;
+    };
+    facts.push(MetadataFact {
+        key: key.to_string(),
+        origin: OriginStage::Proto,
+        extractor_id: "acquisition".into(),
+        extractor_version: "0.1.0".into(),
+        locator: "s3:object".into(),
+        value: FactValue::String(value.to_string()),
+        outcome: FieldOutcome::Present,
+        certainty: Certainty::Observed,
+        sensitive: false,
+    });
 }
 
 fn cap_value(value: FactValue) -> (FactValue, FieldOutcome) {
