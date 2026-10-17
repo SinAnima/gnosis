@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-17
+
+### Added
+
+- **Object storage** — an S3 listing records storage class, ETag, ETag kind, and version id when the service sends one. User metadata and tags stay capped and load only with `--s3-inspect`. `--s3-versions` keeps the latest live version. `--s3-metadata-only` skips the body. `--s3-max-requests` caps list, head, tag, and get calls. `--s3-endpoint` uses path-style addressing, and `--s3-insecure` skips TLS verification for that endpoint.
+
+### Notes
+
+- A multipart ETag is not a content digest. CI uses the in-memory backend. MinIO is a manual demo, not a container job. HTTP 429 and 503 retry three times (100 ms, 200 ms, 400 ms). An expired token is not retried. Error text strips access keys and `X-Amz-Signature`. Semantic coverage stays `not_attempted`.
+
 ## [0.6.1] - 2026-10-16
 
 ### Added
@@ -182,7 +192,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/SinAnima/gnosis/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SinAnima/gnosis/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SinAnima/gnosis/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/SinAnima/gnosis/compare/v0.5.1...v0.5.2

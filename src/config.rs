@@ -14,12 +14,38 @@ pub enum ScanSource {
         location: S3Location,
         /// Optional AWS region override (otherwise default chain / env).
         region: Option<String>,
+        /// Endpoint, inspect calls, and the request budget. Absent on older rows.
+        #[serde(default)]
+        options: S3ScanOptions,
     },
     /// Bounded HTTP(S) crawl starting at one URL.
     Web {
         start_url: String,
         policy: crate::connectors::web::CrawlPolicy,
     },
+}
+
+/// Opt-in object-store calls. The default scan uses the listing only.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct S3ScanOptions {
+    /// S3-compatible endpoint, for example `http://127.0.0.1:9000`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    /// Skip TLS verification for `endpoint` only.
+    #[serde(default)]
+    pub insecure: bool,
+    /// `HeadObject` and `GetObjectTagging` for each key.
+    #[serde(default)]
+    pub inspect: bool,
+    /// List versions and keep the latest live version. Delete markers are not downloaded.
+    #[serde(default)]
+    pub versions: bool,
+    /// Inventory listing facts and do not call `GetObject`.
+    #[serde(default)]
+    pub metadata_only: bool,
+    /// Cap on list pages, head, tag, and get. `0` means no cap.
+    #[serde(default)]
+    pub max_requests: u64,
 }
 
 impl ScanSource {

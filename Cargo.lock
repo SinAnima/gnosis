@@ -2002,15 +2002,18 @@ dependencies = [
 
 [[package]]
 name = "gnosis"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
  "avif-parse",
  "aws-config",
  "aws-sdk-s3",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "base64 0.23.0",
  "blake3",
+ "bytes",
  "chrono",
  "clap",
  "crossbeam-channel",
@@ -2018,6 +2021,11 @@ dependencies = [
  "csv",
  "flate2",
  "genai",
+ "http 1.5.0",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
  "ignore",
  "image-webp",
  "kamadak-exif",
@@ -2032,6 +2040,7 @@ dependencies = [
  "ratatui",
  "redb",
  "reqwest 0.12.28",
+ "rustls",
  "scraper",
  "serde",
  "serde_json",

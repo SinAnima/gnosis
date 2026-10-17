@@ -88,7 +88,7 @@ The next sections are how you run that scan.
 
 ### Install
 
-Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.6.0. The source tree is 0.6.1 and is not tagged yet.
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.6.0. The source tree is 0.7.0 and is not tagged yet.
 
 ### Homebrew
 
@@ -158,12 +158,20 @@ Write the OKF bundle to `knowledge.okf/` inside that folder and print a summary.
 gnosis scan . --no-tui --export
 ```
 
-Scan a bucket. Keys are treated as file paths. Gnosis uses the default AWS credential chain. Pass `--region` when the bucket is not in the default region:
+Scan a bucket. Keys are treated as file paths. Gnosis uses the default AWS credential chain. Pass `--region` when the bucket is not in the default region. A prefix is a directory boundary, so `docs` does not include `docs-old`. The default scan uses the listing (ETag, size, modification time, storage class) and downloads each body under `--max-size`. A matching ETag on the next scan skips that download.
 
 ```sh
 gnosis scan s3://my-bucket --no-tui --export
 gnosis scan s3://my-bucket/docs/api --region us-east-1
 ```
+
+A manual MinIO run uses a custom endpoint. CI does not start a container; it uses the in-memory backend.
+
+```sh
+gnosis scan s3://my-bucket/docs --s3-endpoint http://127.0.0.1:9000 --s3-inspect --no-tui
+```
+
+`--s3-insecure` skips TLS verification for that endpoint. `--s3-inspect` also reads user metadata and tags. `--s3-versions` keeps the latest live version and does not download a delete marker. `--s3-metadata-only` records the listing and does not download the body. `--s3-max-requests` stops further list, head, tag, and get calls (`0` means no cap). A multipart ETag is stored as-is and is not treated as a content digest.
 
 A finished headless scan prints how many files were analyzed and how many were already known:
 
@@ -272,6 +280,12 @@ These flags apply to an `http://` or `https://` scan. A folder or `s3://` scan r
 | Flag | Description |
 |------|-------------|
 | `--region <name>` | AWS region for an `s3://` scan. Otherwise the default credential chain |
+| `--s3-endpoint <url>` | S3-compatible endpoint. Addressing is path-style |
+| `--s3-insecure` | Skip TLS verification for `--s3-endpoint` |
+| `--s3-inspect` | `HeadObject` and `GetObjectTagging` for each key |
+| `--s3-versions` | Latest live version. A delete marker is not downloaded |
+| `--s3-metadata-only` | Listing facts only. The body is not downloaded |
+| `--s3-max-requests <n>` | Cap on list pages, head, tag, and get (`0` means no cap) |
 
 #### Model
 
@@ -786,7 +800,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.6.1. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.7.0. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -800,7 +814,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.5.2 | Phone media | HEIC/HEIF stills and MOV, MP4, M4V, and WebM container metadata. No frame decode, no Live Photo edge, no codec fourcc, and no rotation |
 | 0.6.0 | Office Open XML | DOCX, XLSX, and PPTX package properties and a structural graph: headings, formula source, and slides. No formula calculation, no macros, and no legacy OLE parse |
 | 0.6.1 | PDF metadata | Info properties, page size and rotation, bookmarks, and capped embedded text. No OCR, no password attempt, and no signature validation |
-| 0.7.0 | Object stores | Production-scale S3 and MinIO inventory, resume, sampling, and cost controls. A prefix scan of S3 already ships |
+| 0.7.0 | Object stores | S3 listing facts, opt-in head, tags, and versions, a request budget, and path-style endpoints. CI uses the memory backend. A multipart ETag is not a digest |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
 | 1.0.0 | Stable knowledge infrastructure | Supported schemas, upgrades, and an operating model teams can build on |
 

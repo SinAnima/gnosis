@@ -1,6 +1,7 @@
 pub mod filesystem;
 pub mod git;
 pub mod s3;
+mod s3_tls;
 pub mod types;
 pub mod web;
 
