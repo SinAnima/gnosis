@@ -7,10 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-16
+
+### Added
+
+- **PDF** — a `.pdf` yields Info properties (`pdf:title`, `pdf:author`, `pdf:subject`, `pdf:creator`, `pdf:producer`, `pdf:creation_date`, `pdf:mod_date`, `pdf:page_count`, `pdf:encrypted`, `pdf:signature_present`) and a structural graph: pages, bookmarks, and capped embedded text. A `/Metadata` stream sets `pdf:xmp_present`. A file whose graph was read is partial. Semantic coverage stays `not_attempted`.
+
 ### Fixed
 
 - **Install-channel push** — the release job authenticates to the Homebrew, Scoop, and asdf repositories with Basic auth. A Bearer header was rejected, and the runner then failed with `could not read Username`.
 - **crates.io order** — a release publishes to crates.io only after Homebrew, Scoop, and asdf succeed.
+
+### Notes
+
+- No page is rendered and no OCR text is invented. Embedded text is literal `Tj` / `TJ` strings. An image-only page has no `embedded_text` and stays partial. An encrypted trailer stays a diagnostic. A signature flag is recorded and not checked. Actions are not run. Attachment bytes and font programs are not stored. The reader is a classic xref table; `lopdf` was not added because it pulls unmaintained `ttf-parser` (RUSTSEC-2026-0192). Those gaps are listed in `baoulo/library-gaps.md`.
+- `zip` stays at 6.0.0. RUSTSEC-2026-0367, RUSTSEC-2026-0368, and RUSTSEC-2026-0369 apply to `ZipArchive::extract`, which this crate does not call. The patched `zip` 9 line needs Rust 1.88. `cargo deny` and `cargo audit` both ignore those three ids.
 
 ## [0.6.0] - 2026-10-16
 
@@ -171,7 +182,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/SinAnima/gnosis/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SinAnima/gnosis/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/SinAnima/gnosis/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/SinAnima/gnosis/compare/v0.5.0...v0.5.1

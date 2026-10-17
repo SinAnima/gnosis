@@ -67,6 +67,7 @@ pub fn open_opc(bytes: &[u8]) -> Result<OpcPackage, OpcError> {
     if bytes.len() < 4 || !bytes.starts_with(b"PK") {
         return Err(OpcError::NotZip);
     }
+    // In-memory reads only. ZipArchive::extract is not used; see deny.toml.
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| OpcError::NotZip)?;
     if archive.len() > MAX_ENTRIES {
         return Err(OpcError::Limit("entry count".into()));

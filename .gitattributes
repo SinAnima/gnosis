@@ -1,0 +1,3 @@
+# Windows runners set core.autocrlf=true. A PDF is mostly ASCII, so checkout
+# would insert CR before every LF and the xref byte offsets would miss.
+*.pdf binary

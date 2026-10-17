@@ -1,0 +1,12 @@
+# cargo audit reads this file, not a root audit.toml.
+# The same three zip advisories are ignored in deny.toml.
+# zip >= 9 needs Rust 1.88. This crate's MSRV is 1.85.
+# RUSTSEC-2026-0367, 0368, and 0369 apply to ZipArchive::extract and
+# ZipStreamReader::extract. Office packages are read into memory with by_index.
+
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]

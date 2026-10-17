@@ -1,6 +1,6 @@
 [package]
 name = "gnosis"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "MIT"
 authors = ["Thanos Vassilakis"]
@@ -76,6 +76,7 @@ avif-parse = "2.1"
 nom-exif = "3.8"
 zip = { version = "6.0.0", default-features = false, features = ["deflate"] }
 quick-xml = "0.41.0"
+flate2 = "1.1.10"
 
 [dev-dependencies]
 assert_cmd = "2"

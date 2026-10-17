@@ -1,5 +1,5 @@
-//! HTTP(S) acquisition. Spider stays behind [`spider`] so the rest of Gnosis
-//! only sees these types.
+//! HTTP(S) acquisition. The `spider` implementation stays private so the rest of
+//! Gnosis only sees these types.
 
 mod acquire;
 mod identity;
