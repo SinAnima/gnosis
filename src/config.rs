@@ -23,6 +23,55 @@ pub enum ScanSource {
         start_url: String,
         policy: crate::connectors::web::CrawlPolicy,
     },
+    /// Read-only database catalog. Object paths are `db://` locators, not files.
+    Catalog {
+        location: CatalogLocation,
+        #[serde(default)]
+        options: CatalogOptions,
+    },
+}
+
+/// Connection target for a catalog scan. The password is not serialized or included in `Debug`.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogLocation {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub user: Option<String>,
+    #[serde(skip)]
+    pub password: Option<String>,
+}
+
+impl std::fmt::Debug for CatalogLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CatalogLocation")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("database", &self.database)
+            .field("user", &self.user)
+            .field("password", &self.password.as_ref().map(|_| "REDACTED"))
+            .finish()
+    }
+}
+
+impl CatalogLocation {
+    pub fn display_root(&self) -> PathBuf {
+        PathBuf::from(format!("db://{}", self.database))
+    }
+}
+
+/// Which schemas a catalog scan may list. Empty means `public` only.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogOptions {
+    /// Extra schemas beyond `public`. System schemas are never listed.
+    #[serde(default)]
+    pub schemas: Vec<String>,
+    /// Maximum relations. `0` uses the default of 200.
+    #[serde(default)]
+    pub max_objects: u64,
+    /// Statement timeout in milliseconds. `0` uses the default of 5000.
+    #[serde(default)]
+    pub statement_timeout_ms: u64,
 }
 
 /// Opt-in object-store calls. The default scan uses the listing only.
@@ -54,6 +103,7 @@ impl ScanSource {
             Self::Filesystem { .. } => "filesystem",
             Self::S3 { .. } => "s3",
             Self::Web { .. } => "web",
+            Self::Catalog { .. } => "catalog",
         }
     }
 
@@ -62,6 +112,7 @@ impl ScanSource {
             Self::Filesystem { root } => root.clone(),
             Self::S3 { location, .. } => location.display_root(),
             Self::Web { start_url, .. } => PathBuf::from(start_url),
+            Self::Catalog { location, .. } => location.display_root(),
         }
     }
 

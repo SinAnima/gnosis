@@ -50,6 +50,9 @@ pub struct ProtoData {
     /// Listing and opt-in inspect facts for an object store key.
     #[serde(default)]
     pub s3: Option<S3ProtoData>,
+    /// Relation snapshot for a catalog scan. Absent on files, web pages, and S3 objects.
+    #[serde(default)]
+    pub catalog: Option<CatalogProtoData>,
 }
 
 /// Object-store facts copied onto [`ProtoData`]. A multipart ETag is not a digest.
@@ -68,6 +71,55 @@ pub struct S3ProtoData {
     pub user_metadata: BTreeMap<String, String>,
     #[serde(default)]
     pub tags: BTreeMap<String, String>,
+}
+
+/// One column of a catalog relation. A comment is stored as written.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub ordinal: i32,
+    #[serde(default)]
+    pub comment: Option<String>,
+}
+
+/// A declared foreign key. `target_discovered` is set when that relation is in this scan.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogForeignKey {
+    pub columns: Vec<String>,
+    pub target_schema: String,
+    pub target_relation: String,
+    pub target_columns: Vec<String>,
+    #[serde(default)]
+    pub target_discovered: bool,
+}
+
+/// Catalog facts for one relation. This is not a copy of table rows.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogProtoData {
+    pub database: String,
+    pub schema: String,
+    pub relation: String,
+    /// `table`, `view`, or `materialized_view`.
+    pub kind: String,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub view_definition: Option<String>,
+    #[serde(default)]
+    pub columns: Vec<CatalogColumn>,
+    #[serde(default)]
+    pub primary_key: Vec<String>,
+    #[serde(default)]
+    pub unique_keys: Vec<Vec<String>>,
+    #[serde(default)]
+    pub indexes: Vec<String>,
+    #[serde(default)]
+    pub foreign_keys: Vec<CatalogForeignKey>,
+    /// View dependencies whose schema was not allowlisted. Not edges.
+    #[serde(default)]
+    pub unresolved: Vec<String>,
 }
 
 /// `multipart` when the ETag contains `-`. The value is not a content hash.

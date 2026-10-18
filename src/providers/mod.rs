@@ -11,6 +11,7 @@
 #![allow(clippy::match_like_matches_macro)]
 #![allow(clippy::single_match)]
 
+mod catalog;
 mod code;
 mod data;
 mod docs;
@@ -22,6 +23,7 @@ pub(crate) mod office;
 pub(crate) mod pdf;
 mod util;
 
+pub use catalog::CatalogProvider;
 pub use code::{
     CSharpProvider, CppProvider, ElixirProvider, JavaProvider, JavaScriptProvider, PythonProvider,
     RustProvider, TypeScriptProvider,
@@ -97,6 +99,7 @@ pub fn build_registry(
     registry.register(Box::new(CsvProvider));
     registry.register(Box::new(OfficeProvider));
     registry.register(Box::new(PdfProvider));
+    registry.register(Box::new(CatalogProvider));
 
     #[cfg(feature = "llm")]
     if let Some(cfg) = llm {

@@ -1,6 +1,6 @@
 # ADR 0001 — Metadata-first compilation
 
-**Status:** Accepted. Implemented in v0.5.0 for signature and EXIF facts, in v0.5.1 for PNG, WebP, AVIF, and PSD container metadata, in v0.5.2 for HEIC/HEIF and video container metadata, in v0.6.0 for Office Open XML package properties and a structural graph of DOCX, XLSX, and PPTX, and in v0.6.1 for PDF Info properties and a structural graph of pages, bookmarks, and capped embedded text. v0.7.0 records S3 listing facts on ProtoData and keeps head, tag, version, and body calls opt-in under a request budget.
+**Status:** Accepted. Implemented in v0.5.0 for signature and EXIF facts, in v0.5.1 for PNG, WebP, AVIF, and PSD container metadata, in v0.5.2 for HEIC/HEIF and video container metadata, in v0.6.0 for Office Open XML package properties and a structural graph of DOCX, XLSX, and PPTX, and in v0.6.1 for PDF Info properties and a structural graph of pages, bookmarks, and capped embedded text. v0.7.0 records S3 listing facts on ProtoData and keeps head, tag, version, and body calls opt-in under a request budget. v0.7.1 inventories a PostgreSQL catalog as relations and columns, stores comments as literal facts, and does not read table rows.
 
 ## Context
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-18
+
+### Added
+
+- **Database catalog** — `postgresql://` and `postgres://` inventory tables, views, and materialized views. Each relation is one object. Columns, keys, indexes, and declared foreign keys hang off it. A foreign key becomes a `references` edge when the target relation was also discovered. A view dependency outside the schema allowlist is an unresolved fact. Comments stay literal. The default schema is `public`. `--schema` adds others. `--db-max-objects` defaults to 200. `--db-statement-timeout-ms` defaults to 5000.
+
+### Notes
+
+- No user-table rows are read. The session is one read-only transaction. System schemas are never listed. A privilege failure is a warning on that schema. CI uses a scripted catalog. A live Postgres scan is manual. A catalog scan removes only `obj:db:` ids, so a workbook and a table can share one knowledge file. Semantic coverage stays `not_attempted`.
+
 ## [0.7.0] - 2026-10-17
 
 ### Added
@@ -192,7 +202,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/SinAnima/gnosis/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/SinAnima/gnosis/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SinAnima/gnosis/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SinAnima/gnosis/compare/v0.5.2...v0.6.0

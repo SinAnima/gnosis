@@ -449,7 +449,67 @@ fn acquisition_facts(proto: &ProtoData) -> Vec<MetadataFact> {
             push_s3(&mut facts, &format!("s3:tag:{key}"), Some(value.as_str()));
         }
     }
+    if let Some(catalog) = &proto.catalog {
+        push_catalog(
+            &mut facts,
+            "db:schema",
+            Some(&catalog.schema),
+            "db:relation",
+        );
+        push_catalog(
+            &mut facts,
+            "db:relation",
+            Some(&catalog.relation),
+            "db:relation",
+        );
+        push_catalog(&mut facts, "db:kind", Some(&catalog.kind), "db:relation");
+        push_catalog(
+            &mut facts,
+            "db:comment",
+            catalog.comment.as_deref(),
+            "db:comment",
+        );
+        push_catalog(
+            &mut facts,
+            "db:view_definition",
+            catalog.view_definition.as_deref(),
+            "db:view_definition",
+        );
+        for column in &catalog.columns {
+            push_catalog(
+                &mut facts,
+                &format!("db:column:{}:comment", column.name),
+                column.comment.as_deref(),
+                &format!("db:column:{}", column.name),
+            );
+        }
+        for dependency in &catalog.unresolved {
+            push_catalog(
+                &mut facts,
+                "db:unresolved",
+                Some(dependency.as_str()),
+                &format!("db:unresolved:{dependency}"),
+            );
+        }
+    }
     facts
+}
+
+fn push_catalog(facts: &mut Vec<MetadataFact>, key: &str, value: Option<&str>, locator: &str) {
+    let Some(value) = value.filter(|text| !text.is_empty()) else {
+        return;
+    };
+    facts.push(MetadataFact {
+        key: key.to_string(),
+        origin: OriginStage::Proto,
+        extractor_id: "acquisition".into(),
+        extractor_version: "0.1.0".into(),
+        locator: locator.to_string(),
+        value: FactValue::String(value.to_string()),
+        outcome: FieldOutcome::Present,
+        certainty: Certainty::Observed,
+        sensitive: false,
+    });
 }
 
 fn push_s3(facts: &mut Vec<MetadataFact>, key: &str, value: Option<&str>) {

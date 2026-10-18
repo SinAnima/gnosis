@@ -88,7 +88,7 @@ The next sections are how you run that scan.
 
 ### Install
 
-Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.6.0. The source tree is 0.7.0 and is not tagged yet.
+Release binaries ship on [GitHub Releases](https://github.com/SinAnima/gnosis/releases) with `SHA256SUMS`. Each release publishes the Homebrew formula, Scoop manifest, and asdf plugin from that file. The latest release is v0.7.0. The source tree is 0.7.1 and is not tagged yet.
 
 ### Homebrew
 
@@ -112,7 +112,7 @@ scoop install gnosis
 See [packaging/mise/README.md](packaging/mise/README.md).
 
 ```bash
-mise use -g github:SinAnima/gnosis@0.5.2
+mise use -g github:SinAnima/gnosis@0.7.0
 ```
 
 ### asdf
@@ -126,7 +126,7 @@ asdf install gnosis latest
 
 ### install.sh
 
-Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.5.2`.
+Installs the latest release into `~/.local/bin` (or `GNOSIS_INSTALL_DIR`). Pin a release with `GNOSIS_VERSION=v0.7.0`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SinAnima/gnosis/main/scripts/install.sh | sh
@@ -172,6 +172,12 @@ gnosis scan s3://my-bucket/docs --s3-endpoint http://127.0.0.1:9000 --s3-inspect
 ```
 
 `--s3-insecure` skips TLS verification for that endpoint. `--s3-inspect` also reads user metadata and tags. `--s3-versions` keeps the latest live version and does not download a delete marker. `--s3-metadata-only` records the listing and does not download the body. `--s3-max-requests` stops further list, head, tag, and get calls (`0` means no cap). A multipart ETag is stored as-is and is not treated as a content digest.
+
+Scan a PostgreSQL catalog. The scan lists relations, columns, and declared keys. It does not read table rows. The default schema is `public`. Repeat `--schema` to add another. `pg_catalog`, `information_schema`, and `pg_temp*` are never listed. A password in the URI is used to connect and is not stored on the object path. CI does not start Postgres; it uses a scripted catalog.
+
+```sh
+gnosis scan 'postgresql://localhost/trading' --schema risk --no-tui
+```
 
 A finished headless scan prints how many files were analyzed and how many were already known:
 
@@ -286,6 +292,14 @@ These flags apply to an `http://` or `https://` scan. A folder or `s3://` scan r
 | `--s3-versions` | Latest live version. A delete marker is not downloaded |
 | `--s3-metadata-only` | Listing facts only. The body is not downloaded |
 | `--s3-max-requests <n>` | Cap on list pages, head, tag, and get (`0` means no cap) |
+
+#### Database catalog
+
+| Flag | Description |
+|------|-------------|
+| `--schema <name>` | Schema to include besides `public`. Repeat to add another |
+| `--db-max-objects <n>` | Maximum relations (default: 200) |
+| `--db-statement-timeout-ms <ms>` | Statement timeout (default: 5000) |
 
 #### Model
 
@@ -790,7 +804,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 ## Limitations
 
 - A web crawl does not run JavaScript, does not send cookies or authorization, and is not watched. There is no separate crawl database
-- `gnosis watch` is a local folder. An `s3://` or `http(s)` target is rejected
+- `gnosis watch` is a local folder. An `s3://`, `http(s)`, or `postgresql://` target is rejected
 - Include and import invalidation matches the included path as a suffix. A rename keeps an accepted review mark on the old path
 - Model reading is opt-in (`--features llm` and `--llm`). Model claims stay inferences until accepted. There is no vector index
 - Tree-sitter follows syntax. It is not a substitute for a compiler or type checker
@@ -800,7 +814,7 @@ Pull requests: one concern, CI green, and a note under `[Unreleased]` in [CHANGE
 
 ## Roadmap
 
-Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.7.0. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
+Release numbers are the order of the work, not a set of dates. A release ships when its exit criteria are met. The version in this tree is 0.7.1. The baseline harness for the line is recorded in [docs/reviews/v1-baseline.md](docs/reviews/v1-baseline.md).
 
 | Release | Theme | What it adds |
 |---------|--------|----------------|
@@ -815,6 +829,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.6.0 | Office Open XML | DOCX, XLSX, and PPTX package properties and a structural graph: headings, formula source, and slides. No formula calculation, no macros, and no legacy OLE parse |
 | 0.6.1 | PDF metadata | Info properties, page size and rotation, bookmarks, and capped embedded text. No OCR, no password attempt, and no signature validation |
 | 0.7.0 | Object stores | S3 listing facts, opt-in head, tags, and versions, a request budget, and path-style endpoints. CI uses the memory backend. A multipart ETag is not a digest |
+| 0.7.1 | Database catalog | A read-only PostgreSQL catalog: relations, columns, keys, and literal comments. No table rows. CI uses a scripted catalog |
 | 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
 | 1.0.0 | Stable knowledge infrastructure | Supported schemas, upgrades, and an operating model teams can build on |
 

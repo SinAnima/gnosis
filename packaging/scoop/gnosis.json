@@ -1,12 +1,12 @@
 {
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Gnosis \u2014 enterprise knowledge compiler (CLI + library)",
   "homepage": "https://github.com/SinAnima/gnosis",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/SinAnima/gnosis/releases/download/v0.6.0/gnosis-v0.6.0-windows-x86_64.zip",
-      "hash": "cd72446791a2b004a993cac026416a0e56990d0576df02f20e58d7faf6cac383"
+      "url": "https://github.com/SinAnima/gnosis/releases/download/v0.7.0/gnosis-v0.7.0-windows-x86_64.zip",
+      "hash": "3770043913943c7a0f01afe8d749d7174d4e33cda1a9371de15b61b0cc3848cc"
     }
   },
   "bin": "gnosis.exe",

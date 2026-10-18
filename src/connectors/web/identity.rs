@@ -8,6 +8,8 @@ pub enum TargetClass {
     Filesystem,
     S3,
     Web(String),
+    /// `postgresql://` or `postgres://`. The raw string is parsed later so a password can be dropped.
+    Catalog(String),
     Unsupported(String),
 }
 
@@ -29,6 +31,7 @@ pub fn classify_target(raw: &str, path_exists: bool) -> TargetClass {
     }
     match scheme.to_ascii_lowercase().as_str() {
         "s3" => TargetClass::S3,
+        "postgresql" | "postgres" => TargetClass::Catalog(raw.to_string()),
         "http" | "https" => match canonicalize(raw) {
             Ok(url) => TargetClass::Web(url),
             Err(message) => TargetClass::Unsupported(message),
@@ -190,6 +193,14 @@ mod tests {
         assert!(matches!(
             classify_target("file:///tmp/x", false),
             TargetClass::Unsupported(_)
+        ));
+        assert!(matches!(
+            classify_target("postgresql://user:s3cret@localhost/trading", false),
+            TargetClass::Catalog(_)
+        ));
+        assert!(matches!(
+            classify_target("postgres://localhost/trading", false),
+            TargetClass::Catalog(_)
         ));
         assert!(matches!(
             classify_target("unknown://example.com", false),
