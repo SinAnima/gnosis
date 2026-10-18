@@ -1,4 +1,5 @@
 use crate::config::{ScanConfig, ScanMetrics, ScanSource};
+use crate::connectors::catalog::{CatalogBackend, CatalogConnector, PostgresCatalogBackend};
 use crate::connectors::filesystem::{
     collect_neighbors, fingerprint_bytes, permissions_string, read_object_bytes,
     FilesystemConnector,
@@ -41,6 +42,7 @@ pub struct Pipeline {
     knowledge: Arc<KnowledgeDb>,
     web_acquirer: Option<Arc<dyn crate::connectors::web::WebAcquirer>>,
     s3_backend: Option<Arc<dyn S3Backend>>,
+    catalog_backend: Option<Arc<dyn CatalogBackend>>,
 }
 
 pub struct PipelineHandle {
@@ -85,6 +87,7 @@ enum ObjectAccess {
         s3: Option<Arc<dyn S3Backend>>,
         web: crate::connectors::web::BodyCache,
     },
+    Catalog(Arc<CatalogConnector>),
 }
 
 impl ObjectAccess {
@@ -93,11 +96,14 @@ impl ObjectAccess {
             "s3"
         } else if path_looks_like_http(&object.path) {
             "web"
+        } else if path_looks_like_db(&object.path) {
+            "catalog"
         } else {
             match self {
                 Self::Filesystem | Self::Mixed { .. } => "filesystem",
                 Self::S3(_) => "s3",
                 Self::Web(_) => "web",
+                Self::Catalog(_) => "catalog",
             }
         }
     }
@@ -107,8 +113,11 @@ impl ObjectAccess {
             Self::Filesystem => read_object_bytes(&object.path, max_size),
             Self::S3(c) => c.read_object_bytes(object, max_size),
             Self::Web(cache) => read_web_bytes(cache, object, max_size),
+            Self::Catalog(_) => Ok(Vec::new()),
             Self::Mixed { s3, web } => {
-                if path_looks_like_s3(&object.path) {
+                if path_looks_like_db(&object.path) {
+                    Ok(Vec::new())
+                } else if path_looks_like_s3(&object.path) {
                     let backend = s3.as_ref().ok_or_else(|| {
                         GnosisError::Job("s3 job requires AWS credentials / region".into())
                     })?;
@@ -127,9 +136,12 @@ impl ObjectAccess {
         match self {
             Self::Filesystem => collect_neighbors(&object.path, limit),
             Self::S3(c) => c.collect_neighbors(object, limit),
-            Self::Web(_) => Vec::new(),
+            Self::Web(_) | Self::Catalog(_) => Vec::new(),
             Self::Mixed { .. } => {
-                if path_looks_like_s3(&object.path) || path_looks_like_http(&object.path) {
+                if path_looks_like_s3(&object.path)
+                    || path_looks_like_http(&object.path)
+                    || path_looks_like_db(&object.path)
+                {
                     Vec::new()
                 } else {
                     collect_neighbors(&object.path, limit)
@@ -141,9 +153,12 @@ impl ObjectAccess {
     fn permissions(&self, object: &ObjectDescriptor) -> Option<String> {
         match self {
             Self::Filesystem => permissions_string(&object.path),
-            Self::S3(_) | Self::Web(_) => None,
+            Self::S3(_) | Self::Web(_) | Self::Catalog(_) => None,
             Self::Mixed { .. } => {
-                if path_looks_like_s3(&object.path) || path_looks_like_http(&object.path) {
+                if path_looks_like_s3(&object.path)
+                    || path_looks_like_http(&object.path)
+                    || path_looks_like_db(&object.path)
+                {
                     None
                 } else {
                     permissions_string(&object.path)
@@ -156,7 +171,7 @@ impl ObjectAccess {
         match self {
             Self::Web(cache) => cache.get(id),
             Self::Mixed { web, .. } => web.get(id),
-            Self::Filesystem | Self::S3(_) => None,
+            Self::Filesystem | Self::S3(_) | Self::Catalog(_) => None,
         }
     }
 
@@ -178,6 +193,16 @@ impl ObjectAccess {
         match self {
             Self::S3(connector) => connector.withheld_body(object),
             _ => false,
+        }
+    }
+
+    fn catalog_proto(
+        &self,
+        object: &ObjectDescriptor,
+    ) -> Option<crate::connectors::types::CatalogProtoData> {
+        match self {
+            Self::Catalog(connector) => connector.proto_for(&object.id),
+            _ => None,
         }
     }
 }
@@ -258,6 +283,26 @@ fn path_looks_like_s3(path: &std::path::Path) -> bool {
     path.to_string_lossy()
         .get(..5)
         .is_some_and(|s| s.eq_ignore_ascii_case("s3://"))
+}
+
+fn path_looks_like_db(path: &std::path::Path) -> bool {
+    path.to_string_lossy()
+        .get(..5)
+        .is_some_and(|s| s.eq_ignore_ascii_case("db://"))
+}
+
+fn stored_catalog(
+    knowledge: &KnowledgeDb,
+    object: &ObjectDescriptor,
+) -> Option<crate::connectors::types::CatalogProtoData> {
+    if !path_looks_like_db(&object.path) {
+        return None;
+    }
+    knowledge
+        .get(&object.id)
+        .ok()
+        .flatten()
+        .and_then(|record| record.object.proto.catalog)
 }
 
 fn s3_bucket_and_key(path: &std::path::Path) -> Result<(String, String)> {
@@ -380,7 +425,14 @@ impl Pipeline {
             knowledge,
             web_acquirer: None,
             s3_backend: None,
+            catalog_backend: None,
         }
+    }
+
+    /// Use a scripted catalog instead of connecting to PostgreSQL.
+    pub fn with_catalog_backend(mut self, backend: Arc<dyn CatalogBackend>) -> Self {
+        self.catalog_backend = Some(backend);
+        self
     }
 
     /// Use a memory or other test backend instead of the AWS client.
@@ -653,6 +705,31 @@ impl Pipeline {
                 };
                 (objects, ObjectAccess::S3(connector))
             }
+            ScanSource::Catalog { location, options } => {
+                let backend: Arc<dyn CatalogBackend> = if let Some(backend) = &self.catalog_backend
+                {
+                    Arc::clone(backend)
+                } else {
+                    Arc::new(PostgresCatalogBackend::new(location.clone()))
+                };
+                let connector = Arc::new(CatalogConnector::new(
+                    location.clone(),
+                    options.clone(),
+                    backend,
+                ));
+                let objects = match connector.discover(&events, &self.cancel) {
+                    Ok(o) => o,
+                    Err(GnosisError::Cancelled) => return Err(GnosisError::Cancelled),
+                    Err(e) => {
+                        let _ = events.send(PipelineEvent::Failure {
+                            id: None,
+                            message: e.to_string(),
+                        });
+                        return Err(e);
+                    }
+                };
+                (objects, ObjectAccess::Catalog(connector))
+            }
             ScanSource::Web { start_url, policy } => {
                 let cache = crate::connectors::web::BodyCache::new();
                 let known = if self.config.reanalyze {
@@ -816,6 +893,7 @@ impl Pipeline {
             .map(|object| object.id.as_str().to_string())
             .collect();
         let web_scan = matches!(self.config.source, ScanSource::Web { .. });
+        let catalog_scan = matches!(self.config.source, ScanSource::Catalog { .. });
         let stale: Vec<_> = stored
             .keys()
             .filter(|id| {
@@ -823,10 +901,13 @@ impl Pipeline {
                     return false;
                 }
                 let web_id = id.starts_with("obj:web:");
+                let db_id = id.starts_with("obj:db:");
                 if web_scan {
                     web_id
+                } else if catalog_scan {
+                    db_id
                 } else {
-                    !web_id
+                    !web_id && !db_id
                 }
             })
             .cloned()
@@ -1186,6 +1267,9 @@ fn process_object(
         requested_url: page.as_ref().map(|p| p.requested_url.clone()),
         final_url: page.as_ref().map(|p| p.final_url.clone()),
         s3: access.s3_proto(object),
+        catalog: access
+            .catalog_proto(object)
+            .or_else(|| stored_catalog(knowledge, object)),
     };
 
     let mut evidence = crate::intrinsic::extract_intrinsic(object, &proto, &bytes);

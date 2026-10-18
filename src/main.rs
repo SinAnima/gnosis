@@ -71,6 +71,15 @@ enum Commands {
         /// Cap on list pages, head, tag, and get (`0` means no cap)
         #[arg(long, default_value_t = 0)]
         s3_max_requests: u64,
+        /// Schema to include besides `public`. Repeat to add another. System schemas are never listed
+        #[arg(long = "schema")]
+        schema: Vec<String>,
+        /// Maximum relations a catalog scan inventories
+        #[arg(long, default_value_t = 200)]
+        db_max_objects: u64,
+        /// Catalog statement timeout in milliseconds
+        #[arg(long, default_value_t = 5000)]
+        db_statement_timeout_ms: u64,
         /// Persistent job queue database (redb). Default: `.gnosis/jobs.redb`
         #[arg(long, default_value = ".gnosis/jobs.redb")]
         job_db: PathBuf,
@@ -337,6 +346,9 @@ fn main() -> Result<()> {
             s3_versions,
             s3_metadata_only,
             s3_max_requests,
+            schema,
+            db_max_objects,
+            db_statement_timeout_ms,
             job_db,
             max_attempts,
             retry_base_ms,
@@ -371,6 +383,11 @@ fn main() -> Result<()> {
                 versions: s3_versions,
                 metadata_only: s3_metadata_only,
                 max_requests: s3_max_requests,
+            },
+            gnosis::config::CatalogOptions {
+                schemas: schema,
+                max_objects: db_max_objects,
+                statement_timeout_ms: db_statement_timeout_ms,
             },
             job_db,
             RetryPolicy::new(max_attempts, retry_base_ms, retry_max_ms),
@@ -588,7 +605,9 @@ fn run_watch(
     if is_s3_uri(&path)
         || matches!(
             gnosis::connectors::web::classify_target(&path, false),
-            gnosis::connectors::web::TargetClass::Web(_) | gnosis::connectors::web::TargetClass::S3
+            gnosis::connectors::web::TargetClass::Web(_)
+                | gnosis::connectors::web::TargetClass::S3
+                | gnosis::connectors::web::TargetClass::Catalog(_)
         )
     {
         bail!("gnosis watch is filesystem-only");
@@ -611,6 +630,7 @@ fn run_watch(
             false,
             None,
             gnosis::config::S3ScanOptions::default(),
+            gnosis::config::CatalogOptions::default(),
             job_db.clone(),
             RetryPolicy::new(3, 250, 30_000),
             None,
@@ -937,6 +957,7 @@ fn run_scan(
     auto_export: bool,
     region: Option<String>,
     s3: gnosis::config::S3ScanOptions,
+    catalog: gnosis::config::CatalogOptions,
     job_db: PathBuf,
     retry: RetryPolicy,
     llm: Option<String>,
@@ -985,6 +1006,17 @@ fn run_scan(
             }
             policy.allow_private_network = web.allow_private_network;
             ScanConfig::with_source(ScanSource::Web { start_url, policy })
+        }
+        gnosis::connectors::web::TargetClass::Catalog(raw) => {
+            if web.any() {
+                bail!("web crawl flags apply only to http(s) scans");
+            }
+            let location = gnosis::connectors::catalog::parse_catalog_uri(&raw)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            ScanConfig::with_source(ScanSource::Catalog {
+                location,
+                options: catalog,
+            })
         }
         gnosis::connectors::web::TargetClass::Unsupported(message) => bail!("{message}"),
         gnosis::connectors::web::TargetClass::Filesystem => {
@@ -1044,7 +1076,7 @@ fn run_scan(
             output.clone()
         } else if matches!(
             config.source,
-            ScanSource::S3 { .. } | ScanSource::Web { .. }
+            ScanSource::S3 { .. } | ScanSource::Web { .. } | ScanSource::Catalog { .. }
         ) {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
@@ -1188,6 +1220,7 @@ const HELP_TEXT: &str = r#"Gnosis — Enterprise Knowledge Compiler
   gnosis scan <path>                 Live TUI scan (local directory)
   gnosis scan https://host/docs      Bounded web crawl (no JavaScript, no auth)
   gnosis scan s3://bucket[/prefix]   Scan an S3 bucket (keys = paths)
+  gnosis scan postgresql://host/db   Read-only catalog (no table rows)
   gnosis scan <target> --no-tui      Headless scan (prints summary)
   gnosis scan <target> --no-tui --export
   gnosis scan <target> --llm [MODEL] [--llm-mode fallback|always]
@@ -1220,6 +1253,8 @@ verified unless --s3-insecure is set for that endpoint. The default scan
 uses the listing. --s3-inspect, --s3-versions, and GetObject are opt-in.
 --s3-metadata-only skips the body. --s3-max-requests caps list, head, tag,
 and get calls (0 means no cap).
+A postgresql:// scan lists relations, columns, and keys. It does not read table rows.
+The default schema is public. Repeat --schema to add another. Passwords are not stored.
 LLM extraction requires a build with `--features llm`. It is off unless you pass `--llm`.
 The model id selects an adapter: OpenAI (`gpt-…`), Anthropic (`claude-…`), Gemini (`gemini-…`), or Ollama (anything else, including `tinyllama:latest`). Prefix `openai::`, `anthropic::`, `gemini::`, or `ollama::` to force one.
 Full deterministic providers still win. LLM claims stay `review=pending` until accepted.
