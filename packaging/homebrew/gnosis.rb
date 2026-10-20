@@ -1,30 +1,30 @@
-# Homebrew formula for gnosis v0.7.0.
+# Homebrew formula for gnosis v0.8.0.
 # Published to SinAnima/homebrew-tap as Formula/gnosis.rb.
 class Gnosis < Formula
   desc "Gnosis — enterprise knowledge compiler (CLI + library)"
   homepage "https://github.com/SinAnima/gnosis"
-  version "0.7.0"
+  version "0.8.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/SinAnima/gnosis/releases/download/v#{version}/gnosis-v#{version}-macos-aarch64.tar.gz"
-      sha256 "48f44fd7b0fc163d181cba84ad1636c7200f67819810474a3a72d394e70f9ab2"
+      sha256 "3ece9cc7446652fd0c7958e0b404f2bb3fc748b0285c067d46120707524caff9"
     end
     on_intel do
       url "https://github.com/SinAnima/gnosis/releases/download/v#{version}/gnosis-v#{version}-macos-x86_64.tar.gz"
-      sha256 "b30cea550d55342fcbdcaa39f98a45319fa9b1d17a758f0fa9a09e8ce0e37cf6"
+      sha256 "f43811b0ab4a98b4e2b8a6b45227973fdbbb6d78f4daaa1906c7a33abbd0c7e6"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/SinAnima/gnosis/releases/download/v#{version}/gnosis-v#{version}-linux-aarch64.tar.gz"
-      sha256 "cbefa89b6fb0b48b93dd0aa29355c3eda3014b6009915921a27ac049dd4e19ae"
+      sha256 "b2a85a7dc10cfd8e799d554996991e19316eebc87fa382f8ed32f54b4e41033f"
     end
     on_intel do
       url "https://github.com/SinAnima/gnosis/releases/download/v#{version}/gnosis-v#{version}-linux-x86_64.tar.gz"
-      sha256 "3fa49238775280247b42dcb976f75101b6bc88da662472b61237b0ff4fa48e81"
+      sha256 "c79367d7d6714f61368fd13517f212ce1b0c937e175c752e0d80291a53d00221"
     end
   end
 
