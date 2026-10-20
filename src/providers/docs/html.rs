@@ -272,7 +272,7 @@ fn push_link(
         source,
         provider,
         1,
-        attrs(&[("url", url)]),
+        attrs(&[("url", url), ("placeholder", "true")]),
         Confidence::High,
     );
     relationships.push(relationship(

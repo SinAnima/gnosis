@@ -367,6 +367,8 @@
       "relationships": [
         "contains",
         "contains",
+        "declares_formula",
+        "formula_references",
         "references"
       ],
       "status": "partial"

@@ -313,7 +313,7 @@ impl TuiApp {
         self.show_output = true;
         if cmd == "help" {
             self.output_message =
-                "commands: summary | objects | unknown | providers | stats | review [accept <id>] | jobs [status] | job <id> | find <t> | explain <n> | graph <n> | export okf [path] | quit".into();
+                "commands: summary | objects | unknown | providers | stats | review [accept <id>] | jobs [status] | job <id> | find <t> | explain <n> | graph <n> | why <rel> | where <n> | meta <key> | deps <path> | export okf [path] | quit".into();
             return;
         }
 
@@ -447,8 +447,15 @@ impl TuiApp {
                     entity,
                     neighborhood,
                 }) => {
+                    let placeholder = if entity.attributes.get("placeholder").map(String::as_str)
+                        == Some("true")
+                    {
+                        "\nplaceholder"
+                    } else {
+                        ""
+                    };
                     self.output_message = format!(
-                        "{} {} ({})\nconfidence: {}\nsource: {}\nattrs: {:?}\nneighbors: {} nodes / {} edges",
+                        "{} {} ({})\nconfidence: {}\nsource: {}\nattrs: {:?}\nneighbors: {} nodes / {} edges{placeholder}",
                         entity.kind,
                         entity.name,
                         entity.id,
@@ -462,21 +469,54 @@ impl TuiApp {
                 Some(crate::ExplainResult::Object { object }) => {
                     self.output_message = format_object_detail(object);
                 }
+                Some(crate::ExplainResult::Candidates(entities)) => {
+                    self.output_message = format_candidates(&entities);
+                }
                 None => self.output_message = "not found".into(),
             }
             return;
         }
         if let Some(name) = cmd.strip_prefix("graph ") {
             match q.graph(name.trim(), 1) {
-                Some((entity, neighborhood)) => {
+                Some(crate::GraphResult::Graph {
+                    entity,
+                    neighborhood,
+                }) => {
                     let mut lines = vec![format!("graph around {} {}", entity.kind, entity.name)];
-                    for e in neighborhood.edges.iter().take(30) {
-                        lines.push(format!("  {} --{}--> {}", e.from, e.kind, e.to));
+                    for edge in neighborhood.edges.iter().take(30) {
+                        let missing = if neighborhood.nodes.contains_key(&edge.to) {
+                            ""
+                        } else {
+                            " target entity not in store"
+                        };
+                        lines.push(format!(
+                            "  {} --{}--> {}{missing}",
+                            edge.from, edge.kind, edge.to
+                        ));
                     }
                     self.output_message = lines.join("\n");
                 }
+                Some(crate::GraphResult::Candidates(entities)) => {
+                    self.output_message = format_candidates(&entities);
+                }
                 None => self.output_message = "not found".into(),
             }
+            return;
+        }
+        if let Some(id) = cmd.strip_prefix("why ") {
+            self.output_message = q.why(id.trim());
+            return;
+        }
+        if let Some(name) = cmd.strip_prefix("where ") {
+            self.output_message = q.where_is(name.trim());
+            return;
+        }
+        if let Some(key) = cmd.strip_prefix("meta ") {
+            self.output_message = q.meta(key.trim());
+            return;
+        }
+        if let Some(path) = cmd.strip_prefix("deps ") {
+            self.output_message = q.deps(path.trim());
             return;
         }
         if cmd == "export okf" || cmd.starts_with("export okf ") {
@@ -747,6 +787,17 @@ fn resolve_job(
             matches.len()
         ))),
     }
+}
+
+fn format_candidates(entities: &[&crate::Entity]) -> String {
+    let mut lines = vec!["candidates:".to_string()];
+    for entity in entities {
+        lines.push(format!(
+            "{} {} {} {}",
+            entity.kind, entity.name, entity.id, entity.source_object
+        ));
+    }
+    lines.join("\n")
 }
 
 fn format_object_detail(o: &StoredObject) -> String {
