@@ -61,6 +61,10 @@ pub struct KnowledgeStore {
     reasons: HashMap<String, String>,
     /// Objects removed because they were not rediscovered.
     deleted: Vec<DeletedObject>,
+    /// Roots removed this scan, used once for a rename edge.
+    removed_roots: Vec<RemovedRoot>,
+    /// Intrinsic fact keys copied for `meta`.
+    facts: Vec<StoredFact>,
     review_sink: Option<Arc<dyn ReviewSink>>,
     root: Option<std::path::PathBuf>,
     git_branch: Option<String>,
@@ -79,6 +83,23 @@ pub struct DeletedObject {
     pub provider_version: Option<String>,
     pub entity_ids: Vec<String>,
     pub relationship_ids: Vec<String>,
+}
+
+/// A removed object's root, kept so a later object with the same fingerprint can link back.
+#[derive(Clone, Debug)]
+pub struct RemovedRoot {
+    pub fingerprint: Option<String>,
+    pub path: String,
+    pub root: EntityId,
+}
+
+/// One intrinsic fact visible to `meta`.
+#[derive(Clone, Debug)]
+pub struct StoredFact {
+    pub object: ObjectId,
+    pub path: String,
+    pub key: String,
+    pub value: String,
 }
 
 impl KnowledgeStore {
@@ -116,6 +137,99 @@ impl KnowledgeStore {
             .get(id)
             .map(|ids| ids.iter().map(|rid| rid.as_str().to_string()).collect())
             .unwrap_or_default()
+    }
+
+    pub fn entities_of(&self, id: &ObjectId) -> Vec<Entity> {
+        let Some(object) = self.objects.get(id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for eid in &object.entity_ids {
+            if let Some(entity) = self.entities.get(eid) {
+                out.push(entity.clone());
+            }
+        }
+        for entity in self.entities.values() {
+            if &entity.source_object == id && !out.iter().any(|item| item.id == entity.id) {
+                out.push(entity.clone());
+            }
+        }
+        out
+    }
+
+    pub fn relationships_of(&self, id: &ObjectId) -> Vec<Relationship> {
+        self.produced_rels
+            .get(id)
+            .into_iter()
+            .flatten()
+            .filter_map(|rid| self.relationships.get(rid).cloned())
+            .collect()
+    }
+
+    pub fn get_relationship(&self, id: &RelationshipId) -> Option<&Relationship> {
+        self.relationships.get(id)
+    }
+
+    pub fn facts(&self) -> &[StoredFact] {
+        &self.facts
+    }
+
+    pub fn set_object_facts(&mut self, id: &ObjectId, path: &str, facts: Vec<(String, String)>) {
+        self.facts.retain(|fact| &fact.object != id);
+        for (key, value) in facts {
+            self.facts.push(StoredFact {
+                object: id.clone(),
+                path: path.to_string(),
+                key,
+                value,
+            });
+        }
+    }
+
+    pub fn take_removed_roots(&mut self) -> Vec<RemovedRoot> {
+        std::mem::take(&mut self.removed_roots)
+    }
+
+    /// Document, workbook, presentation, relation, or module, else the first real entity.
+    pub fn root_entity(&self, id: &ObjectId) -> Option<EntityId> {
+        let object = self.objects.get(id)?;
+        let listed: Vec<&Entity> = object
+            .entity_ids
+            .iter()
+            .filter_map(|eid| self.entities.get(eid))
+            .collect();
+        if let Some(entity) = listed
+            .iter()
+            .find(|entity| is_root_kind(&entity.kind) && !is_placeholder(entity))
+        {
+            return Some(entity.id.clone());
+        }
+        listed
+            .iter()
+            .find(|entity| !is_placeholder(entity))
+            .map(|entity| entity.id.clone())
+    }
+
+    /// Replace one object's entities and relationships without dropping the object row.
+    pub fn replace_object_graph(
+        &mut self,
+        id: &ObjectId,
+        entities: Vec<Entity>,
+        relationships: Vec<Relationship>,
+    ) {
+        self.clear_derived(id);
+        if let Some(object) = self.objects.get_mut(id) {
+            object.entity_ids.clear();
+        }
+        for entity in entities {
+            self.add_entity(entity);
+        }
+        let mut rel_ids = Vec::new();
+        for rel in relationships {
+            rel_ids.push(rel.id.clone());
+            self.add_relationship(rel);
+        }
+        self.produced_rels.insert(id.clone(), rel_ids);
     }
 
     pub fn set_root(&mut self, root: std::path::PathBuf) {
@@ -301,7 +415,15 @@ impl KnowledgeStore {
             .relative_path
             .to_string_lossy()
             .to_string();
+        if let Some(root) = self.root_entity(id) {
+            self.removed_roots.push(RemovedRoot {
+                fingerprint: object.proto.fingerprint.clone(),
+                path: path_key.clone(),
+                root,
+            });
+        }
         self.by_path.remove(&path_key);
+        self.facts.retain(|fact| &fact.object != id);
         self.clear_derived(id);
         self.objects.remove(id);
         self.deleted.push(deleted.clone());
@@ -524,6 +646,9 @@ impl KnowledgeStore {
             }
         }
         for e in self.entities.values() {
+            if is_placeholder(e) {
+                continue;
+            }
             match e.kind.as_str() {
                 "module" | "namespace" | "package" => counts.modules += 1,
                 "class" | "struct" | "enum" | "trait" | "protocol" | "type" => counts.types += 1,
@@ -535,6 +660,17 @@ impl KnowledgeStore {
         }
         counts
     }
+}
+
+fn is_placeholder(entity: &Entity) -> bool {
+    entity.attributes.get("placeholder").map(String::as_str) == Some("true")
+}
+
+fn is_root_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "document" | "workbook" | "presentation" | "relation" | "module"
+    )
 }
 
 #[derive(Clone, Debug, Default)]

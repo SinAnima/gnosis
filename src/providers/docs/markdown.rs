@@ -160,7 +160,7 @@ impl UnderstandingProvider for MarkdownProvider {
                 &object.id,
                 &provider,
                 1,
-                attrs(&[("href", link)]),
+                attrs(&[("href", link), ("placeholder", "true")]),
                 Confidence::Medium,
             );
             relationships.push(relationship(

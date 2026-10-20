@@ -147,7 +147,10 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
             }
         );
 
-        let filename = sanitize(&format!("{}_{}.md", entity.kind, entity.name));
+        let filename = export_filename(
+            &format!("{}_{}", entity.kind, entity.name),
+            entity.id.as_str(),
+        );
         let provider = entity.evidence.first().map(|e| e.provider.to_string());
         let path = output.join("entities").join(&filename);
         if incremental && unchanged.contains(entity.source_object.as_str()) && path.is_file() {
@@ -238,7 +241,7 @@ fn export_okf(store: &KnowledgeStore, output: &Path) -> anyhow::Result<()> {
                 format!("\n## Attributes\n\n{attrs}\n")
             }
         );
-        let filename = sanitize(&format!("{}.md", rel.id.as_str()));
+        let filename = export_filename(&rel.kind, rel.id.as_str());
         let provider = rel.evidence.first().map(|e| e.provider.to_string());
         let page = output.join("relationships").join(&filename);
         let owner = relationship_owner(store, rel.id.as_str());
@@ -433,6 +436,24 @@ fn frontmatter_yaml(fm: &Frontmatter) -> anyhow::Result<String> {
     }
 }
 
+/// `{prefix}__{64 hex}.md`, at most 120 characters, with the full BLAKE3 hash of `id`.
+pub fn export_filename(label: &str, id: &str) -> String {
+    let hash = blake3::hash(id.as_bytes()).to_hex();
+    let mut stem = String::new();
+    for c in label.chars() {
+        if c.is_ascii() && (c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+            stem.push(c);
+        } else {
+            stem.push('_');
+        }
+    }
+    if let Some(stripped) = stem.strip_suffix(".md") {
+        stem = stripped.to_string();
+    }
+    let prefix: String = stem.chars().take(51).collect();
+    format!("{prefix}__{hash}.md")
+}
+
 fn sanitize(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     for c in name.chars() {
@@ -451,5 +472,30 @@ fn sanitize(name: &str) -> String {
         format!("{out}.md")
     } else {
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::export_filename;
+
+    #[test]
+    fn filename_keeps_the_full_hash_under_120_chars() {
+        let long = "section_".to_string() + &"Overview".repeat(40);
+        let id = "ent:section:Overview@docs/a.md";
+        let other = "ent:section:Overview@docs/b.md";
+        let left = export_filename(&long, id);
+        let right = export_filename(&long, other);
+        let hash = blake3::hash(id.as_bytes()).to_hex().to_string();
+        assert!(left.len() <= 120, "{}", left.len());
+        assert!(right.len() <= 120);
+        assert!(left.contains(&hash));
+        assert_eq!(hash.len(), 64);
+        assert_ne!(left, right);
+        assert_eq!(left, export_filename(&long, id));
+        let empty = export_filename("", id);
+        assert!(empty.starts_with("__"));
+        assert!(empty.contains(&hash));
+        assert!(empty.len() <= 120);
     }
 }

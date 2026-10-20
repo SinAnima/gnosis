@@ -14,6 +14,7 @@ pub mod intrinsic;
 pub mod jobs;
 pub mod knowledge;
 pub mod knowledge_db;
+pub mod link;
 pub mod okf;
 pub mod pipeline;
 pub mod prompts;
@@ -65,7 +66,7 @@ pub use providers::{
     parse_llm_json, strip_json_fence, AnthropicAdapter, GeminiAdapter, LlmCompletion,
     LlmSemanticProvider, LlmStamp, LlmVendor, OllamaAdapter, OpenAiAdapter, StaticBackend,
 };
-pub use query::{ExplainResult, QueryEngine};
+pub use query::{ExplainResult, GraphResult, QueryEngine};
 pub use status::UnderstandingStatus;
 pub use store::{FindResults, GraphNeighborhood, InventoryCounts, KnowledgeStore, StoredObject};
 pub use tui::{drain_events_headless, TuiApp};

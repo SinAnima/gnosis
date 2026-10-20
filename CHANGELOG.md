@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+### Added
+
+- **Linking** — After a scan finishes, one pass resolves path-shaped references. A single path match is `exact`. No match stays `unresolved`. Several matches stay `ambiguous` and list the paths. Markdown and HTML links, Office hyperlinks, in-workbook formula ranges, catalog foreign keys, and code imports and includes use that rule. A bare word does not match a file that merely contains the word.
+
+### Changed
+
+- `explain` and `graph` list every entity that shares a name.
+- `why`, `where`, `meta`, and `deps` read a relationship, an entity's source file, a fact key, and an object's dependencies.
+- OKF entity and relationship filenames end with the full BLAKE3 hash of the stable id, so two sections with the same name do not share a file. The path is still the object locator. The content fingerprint is still the content id.
+
+### Notes
+
+- `defines` and `belongs_to` are in the vocabulary and unused. No row is read. No formula is calculated. An unresolved foreign key may point at an entity id that is not in the store. `why` says so and keeps the edge.
+
 ## [0.7.1] - 2026-10-18
 
 ### Added
@@ -202,7 +218,8 @@ First public release of **Gnosis** — Enterprise Knowledge Compiler.
 - OKF export is a hand-written markdown+YAML bundle (not coupled to a specific OKF library crate)
 - MSRV: Rust **1.85**
 
-[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/SinAnima/gnosis/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/SinAnima/gnosis/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/SinAnima/gnosis/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/SinAnima/gnosis/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/SinAnima/gnosis/compare/v0.6.0...v0.6.1

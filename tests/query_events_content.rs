@@ -63,6 +63,8 @@ fn query_summary_objects_unknown_find_explain_graph() {
     let mut a = sample_object("src/a.rs", UnderstandingStatus::Understood);
     let b = sample_object("data/blob.bin", UnderstandingStatus::Unknown);
     let c = sample_object("docs/n.txt", UnderstandingStatus::PartiallyUnderstood);
+    let a_id = a.descriptor.id.clone();
+    let c_id = c.descriptor.id.clone();
 
     let ea = sample_entity("Alpha", "function", &a.descriptor.id);
     let eb = sample_entity("Beta", "struct", &a.descriptor.id);
@@ -74,6 +76,16 @@ fn query_summary_objects_unknown_find_explain_graph() {
     store.upsert_object(c);
     store.add_entity(ea.clone());
     store.add_entity(eb.clone());
+    let mut overview_a = sample_entity("Overview", "section", &a_id);
+    overview_a.id = EntityId::generate("section", "Overview", "docs/a.md");
+    overview_a
+        .attributes
+        .insert("placeholder".into(), "true".into());
+    let mut overview_b = sample_entity("Overview", "section", &c_id);
+    overview_b.id = EntityId::generate("section", "Overview", "docs/b.md");
+    store.add_entity(overview_a.clone());
+    store.add_entity(overview_b);
+    store.set_object_facts(&a_id, "src/a.rs", vec![("exif:Model".into(), "X".into())]);
     store.add_relationship(Relationship {
         id: RelationshipId::generate("defines", ea.id.as_str(), eb.id.as_str()),
         kind: "defines".into(),
@@ -117,9 +129,30 @@ fn query_summary_objects_unknown_find_explain_graph() {
     ));
     assert!(q.explain("missing").is_none());
 
-    let (entity, graph) = q.graph("Alpha", 1).unwrap();
-    assert_eq!(entity.name, "Alpha");
-    assert!(!graph.edges.is_empty());
+    match q.explain("Overview") {
+        Some(gnosis::ExplainResult::Candidates(found)) => {
+            assert_eq!(found.len(), 2);
+        }
+        other => panic!("expected candidates, got {other:?}"),
+    }
+    let where_text = q.where_is(overview_a.id.as_str());
+    assert!(where_text.contains("placeholder"));
+    assert!(where_text.contains("src/a.rs"));
+    assert_eq!(q.why("rel:missing"), "not found");
+    let meta = q.meta("exif:Model");
+    assert!(meta.contains("src/a.rs"));
+    assert!(meta.contains("X"));
+
+    match q.graph("Alpha", 1).unwrap() {
+        gnosis::GraphResult::Graph {
+            entity,
+            neighborhood,
+        } => {
+            assert_eq!(entity.name, "Alpha");
+            assert!(!neighborhood.edges.is_empty());
+        }
+        gnosis::GraphResult::Candidates(_) => panic!("expected one entity"),
+    }
 }
 
 #[test]

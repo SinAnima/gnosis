@@ -848,6 +848,12 @@ impl Pipeline {
             return Err(e);
         }
 
+        let changed = {
+            let mut store = self.store.lock().unwrap();
+            crate::link::link_store(&mut store)
+        };
+        persist_linked(&self.knowledge, &self.store, &changed)?;
+
         write_snapshot(&self.knowledge, &self.store, &scan_id)?;
 
         let elapsed = self.metrics.elapsed_ms();
@@ -885,6 +891,19 @@ impl Pipeline {
                     record.entities.clone(),
                     record.relationships.clone(),
                 );
+                if let Some(evidence) = &record.evidence {
+                    let path = record
+                        .object
+                        .descriptor
+                        .relative_path
+                        .to_string_lossy()
+                        .to_string();
+                    store.set_object_facts(
+                        &record.object.descriptor.id,
+                        &path,
+                        fact_pairs(evidence),
+                    );
+                }
             }
         }
 
@@ -1192,6 +1211,50 @@ fn persist_current(
     knowledge.put(&record)
 }
 
+fn persist_linked(
+    knowledge: &KnowledgeDb,
+    store: &Mutex<KnowledgeStore>,
+    ids: &[crate::ids::ObjectId],
+) -> Result<()> {
+    for id in ids {
+        let Some(mut record) = knowledge.get(id)? else {
+            continue;
+        };
+        let (entities, relationships) = {
+            let stored = store.lock().unwrap();
+            (stored.entities_of(id), stored.relationships_of(id))
+        };
+        record.deps = collect_deps(&entities, &relationships);
+        record.entities = entities;
+        record.relationships = relationships;
+        knowledge.put(&record)?;
+    }
+    Ok(())
+}
+
+fn fact_pairs(evidence: &crate::intrinsic::ArtifactEvidenceRecord) -> Vec<(String, String)> {
+    evidence
+        .intrinsic
+        .facts
+        .iter()
+        .map(|fact| (fact.key.clone(), fact_value_text(&fact.value)))
+        .collect()
+}
+
+fn fact_value_text(value: &crate::intrinsic::FactValue) -> String {
+    match value {
+        crate::intrinsic::FactValue::String(text)
+        | crate::intrinsic::FactValue::Decimal(text)
+        | crate::intrinsic::FactValue::Timestamp(text)
+        | crate::intrinsic::FactValue::Uri(text)
+        | crate::intrinsic::FactValue::Digest(text) => text.clone(),
+        crate::intrinsic::FactValue::Integer(number) => number.to_string(),
+        crate::intrinsic::FactValue::Bool(flag) => flag.to_string(),
+        crate::intrinsic::FactValue::Array(items) => items.join(","),
+        crate::intrinsic::FactValue::Null => String::new(),
+    }
+}
+
 fn note_status(
     metrics: &ScanMetrics,
     id: &str,
@@ -1488,19 +1551,24 @@ fn process_object(
     let status = evidence.user_status;
     let classification_reason = evidence.status_reason.clone();
     let version = provider.version().to_string();
-    store.lock().unwrap().replace_analysis(
-        StoredObject {
-            descriptor: object.clone(),
-            proto,
-            status,
-            provider: Some(provider.id()),
-            classification_reason: classification_reason.clone(),
-            entity_ids,
-            diagnostics,
-        },
-        result.record.entities.clone(),
-        result.record.relationships.clone(),
-    );
+    {
+        let mut guard = store.lock().unwrap();
+        guard.replace_analysis(
+            StoredObject {
+                descriptor: object.clone(),
+                proto,
+                status,
+                provider: Some(provider.id()),
+                classification_reason: classification_reason.clone(),
+                entity_ids,
+                diagnostics,
+            },
+            result.record.entities.clone(),
+            result.record.relationships.clone(),
+        );
+        let path = object.relative_path.to_string_lossy().to_string();
+        guard.set_object_facts(&object.id, &path, fact_pairs(&evidence));
+    }
     note_status(metrics, object.id.as_str(), prior, status);
     persist_current(
         knowledge,

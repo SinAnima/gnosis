@@ -830,7 +830,7 @@ Release numbers are the order of the work, not a set of dates. A release ships w
 | 0.6.1 | PDF metadata | Info properties, page size and rotation, bookmarks, and capped embedded text. No OCR, no password attempt, and no signature validation |
 | 0.7.0 | Object stores | S3 listing facts, opt-in head, tags, and versions, a request budget, and path-style endpoints. CI uses the memory backend. A multipart ETag is not a digest |
 | 0.7.1 | Database catalog | A read-only PostgreSQL catalog: relations, columns, keys, and literal comments. No table rows. CI uses a scripted catalog |
-| 0.8.0 | Knowledge access | A stable query API, plus MCP and local HTTP adapters for other tools |
+| 0.8.0 | Linking | Exact, unresolved, and ambiguous edges for links, formulas, foreign keys, and imports. OKF filenames keep the full id hash |
 | 1.0.0 | Stable knowledge infrastructure | Supported schemas, upgrades, and an operating model teams can build on |
 
 ## Demo
